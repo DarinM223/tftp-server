@@ -1,4 +1,5 @@
 use std::io;
+use std::mem;
 
 #[repr(u16)]
 pub enum OpCode {
@@ -7,6 +8,13 @@ pub enum OpCode {
     DATA = 3,
     ACK = 4,
     ERROR = 5,
+}
+
+impl OpCode {
+    pub fn from_u16(i: u16) -> OpCode {
+        assert!(i >= OpCode::RRQ as u16 && i <= OpCode::ERROR as u16);
+        unsafe { mem::transmute(i) }
+    }
 }
 
 #[repr(u16)]
@@ -34,24 +42,34 @@ pub enum Packet {
         filename: String,
         mode: &'static str,
     },
-    DATA { block_num: u16, data: [u8; 512] },
+    DATA {
+        block_num: u16,
+        data: [u8; 512],
+    },
     ACK(u16),
-    ERROR { code: u16, msg: String },
+    ERROR {
+        code: u16,
+        msg: String,
+    },
 }
 
-pub enum PacketData {
-    ReadWrite([u8; MAX_PACKET_SIZE], usize),
-    Data([u8; MAX_DATA_SIZE], usize),
-    Ack([u8; 4]),
-    Error([u8; MAX_PACKET_SIZE], usize),
-}
+pub type PacketData = [u8; MAX_PACKET_SIZE];
 
 pub enum PacketErr {
     OverflowSize,
 }
 
-
 impl Packet {
+    pub fn read(bytes: PacketData) -> Packet {
+        let opcode = OpCode::from_u16(merge_bytes(bytes[0], bytes[1]));
+        match opcode {
+            OpCode::RRQ | OpCode::WRQ => read_rw_packet(opcode, bytes),
+            OpCode::DATA => read_data_packet(bytes),
+            OpCode::ACK => read_ack_packet(bytes),
+            OpCode::ERROR => read_error_packet(bytes),
+        }
+    }
+
     /// Returns the packet's operation code.
     pub fn op_code(&self) -> OpCode {
         match *self {
@@ -66,8 +84,8 @@ impl Packet {
     /// Consumes the packet and returns the packet in byte representation.
     pub fn bytes(self) -> Result<PacketData, PacketErr> {
         match self {
-            Packet::RRQ { filename, mode } => read_write_packet_bytes(OpCode::RRQ, filename, mode),
-            Packet::WRQ { filename, mode } => read_write_packet_bytes(OpCode::WRQ, filename, mode),
+            Packet::RRQ { filename, mode } => rw_packet_bytes(OpCode::RRQ, filename, mode),
+            Packet::WRQ { filename, mode } => rw_packet_bytes(OpCode::WRQ, filename, mode),
             Packet::DATA { block_num, data } => data_packet_bytes(block_num, data),
             Packet::ACK(block_num) => ack_packet_bytes(block_num),
             Packet::ERROR { code, msg } => error_packet_bytes(code, msg),
@@ -76,15 +94,35 @@ impl Packet {
 }
 
 /// Splits a two byte unsigned integer into two one byte unsigned integers.
-fn split_into_bytes(num: u16) -> (u8, u8) {
+pub fn split_into_bytes(num: u16) -> (u8, u8) {
     let (b0, b1) = (num & 0xFF, (num >> 8) & (0xFF));
     (b0 as u8, b1 as u8)
 }
 
-fn read_write_packet_bytes(packet: OpCode,
-                           filename: String,
-                           mode: &'static str)
-                           -> Result<PacketData, PacketErr> {
+pub fn merge_bytes(num1: u8, num2: u8) -> u16 {
+    unimplemented!()
+}
+
+fn read_rw_packet(code: OpCode, bytes: PacketData) -> Packet {
+    unimplemented!()
+}
+
+fn read_data_packet(bytes: PacketData) -> Packet {
+    unimplemented!()
+}
+
+fn read_ack_packet(bytes: PacketData) -> Packet {
+    unimplemented!()
+}
+
+fn read_error_packet(bytes: PacketData) -> Packet {
+    unimplemented!()
+}
+
+fn rw_packet_bytes(packet: OpCode,
+                   filename: String,
+                   mode: &'static str)
+                   -> Result<PacketData, PacketErr> {
     if filename.len() + mode.len() > MAX_PACKET_SIZE {
         return Err(PacketErr::OverflowSize);
     }
@@ -106,13 +144,12 @@ fn read_write_packet_bytes(packet: OpCode,
         bytes[index] = byte;
         index += 1;
     }
-    index += 1;
 
-    Ok(PacketData::ReadWrite(bytes, index))
+    Ok(bytes)
 }
 
 fn data_packet_bytes(block_num: u16, data: [u8; 512]) -> Result<PacketData, PacketErr> {
-    let mut bytes = [0; MAX_DATA_SIZE];
+    let mut bytes = [0; MAX_PACKET_SIZE];
 
     let (b1, b2) = split_into_bytes(OpCode::DATA as u16);
     bytes[0] = b1;
@@ -128,11 +165,11 @@ fn data_packet_bytes(block_num: u16, data: [u8; 512]) -> Result<PacketData, Pack
         index += 1;
     }
 
-    Ok(PacketData::Data(bytes, index))
+    Ok(bytes)
 }
 
 fn ack_packet_bytes(block_num: u16) -> Result<PacketData, PacketErr> {
-    let mut bytes = [0; 4];
+    let mut bytes = [0; MAX_PACKET_SIZE];
 
     let (b1, b2) = split_into_bytes(OpCode::ACK as u16);
     bytes[0] = b1;
@@ -142,7 +179,7 @@ fn ack_packet_bytes(block_num: u16) -> Result<PacketData, PacketErr> {
     bytes[2] = b3;
     bytes[3] = b4;
 
-    Ok(PacketData::Ack(bytes))
+    Ok(bytes)
 }
 
 fn error_packet_bytes(code: u16, msg: String) -> Result<PacketData, PacketErr> {
@@ -166,7 +203,5 @@ fn error_packet_bytes(code: u16, msg: String) -> Result<PacketData, PacketErr> {
         index += 1;
     }
 
-    index += 1;
-
-    Ok(PacketData::Error(bytes, index))
+    Ok(bytes)
 }
