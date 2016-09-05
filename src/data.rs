@@ -1,5 +1,5 @@
+use std::{mem, result};
 use std::io;
-use std::mem;
 
 #[repr(u16)]
 pub enum OpCode {
@@ -54,13 +54,28 @@ pub enum Packet {
 }
 
 pub type PacketData = [u8; MAX_PACKET_SIZE];
+pub type Result<T> = result::Result<T, PacketErr>;
 
 pub enum PacketErr {
     OverflowSize,
 }
 
+impl PacketErr {
+    pub fn str(&self) -> &'static str {
+        match *self {
+            PacketErr::OverflowSize => "Packet size has overflowed",
+        }
+    }
+}
+
+impl From<PacketErr> for io::Error {
+    fn from(err: PacketErr) -> io::Error {
+        io::Error::new(io::ErrorKind::Other, err.str())
+    }
+}
+
 impl Packet {
-    pub fn read(bytes: PacketData) -> Packet {
+    pub fn read(bytes: PacketData) -> Result<Packet> {
         let opcode = OpCode::from_u16(merge_bytes(bytes[0], bytes[1]));
         match opcode {
             OpCode::RRQ | OpCode::WRQ => read_rw_packet(opcode, bytes),
@@ -82,7 +97,7 @@ impl Packet {
     }
 
     /// Consumes the packet and returns the packet in byte representation.
-    pub fn bytes(self) -> Result<PacketData, PacketErr> {
+    pub fn bytes(self) -> Result<PacketData> {
         match self {
             Packet::RRQ { filename, mode } => rw_packet_bytes(OpCode::RRQ, filename, mode),
             Packet::WRQ { filename, mode } => rw_packet_bytes(OpCode::WRQ, filename, mode),
@@ -103,26 +118,23 @@ pub fn merge_bytes(num1: u8, num2: u8) -> u16 {
     unimplemented!()
 }
 
-fn read_rw_packet(code: OpCode, bytes: PacketData) -> Packet {
+fn read_rw_packet(code: OpCode, bytes: PacketData) -> Result<Packet> {
     unimplemented!()
 }
 
-fn read_data_packet(bytes: PacketData) -> Packet {
+fn read_data_packet(bytes: PacketData) -> Result<Packet> {
     unimplemented!()
 }
 
-fn read_ack_packet(bytes: PacketData) -> Packet {
+fn read_ack_packet(bytes: PacketData) -> Result<Packet> {
     unimplemented!()
 }
 
-fn read_error_packet(bytes: PacketData) -> Packet {
+fn read_error_packet(bytes: PacketData) -> Result<Packet> {
     unimplemented!()
 }
 
-fn rw_packet_bytes(packet: OpCode,
-                   filename: String,
-                   mode: &'static str)
-                   -> Result<PacketData, PacketErr> {
+fn rw_packet_bytes(packet: OpCode, filename: String, mode: &'static str) -> Result<PacketData> {
     if filename.len() + mode.len() > MAX_PACKET_SIZE {
         return Err(PacketErr::OverflowSize);
     }
@@ -148,7 +160,7 @@ fn rw_packet_bytes(packet: OpCode,
     Ok(bytes)
 }
 
-fn data_packet_bytes(block_num: u16, data: [u8; 512]) -> Result<PacketData, PacketErr> {
+fn data_packet_bytes(block_num: u16, data: [u8; 512]) -> Result<PacketData> {
     let mut bytes = [0; MAX_PACKET_SIZE];
 
     let (b1, b2) = split_into_bytes(OpCode::DATA as u16);
@@ -168,7 +180,7 @@ fn data_packet_bytes(block_num: u16, data: [u8; 512]) -> Result<PacketData, Pack
     Ok(bytes)
 }
 
-fn ack_packet_bytes(block_num: u16) -> Result<PacketData, PacketErr> {
+fn ack_packet_bytes(block_num: u16) -> Result<PacketData> {
     let mut bytes = [0; MAX_PACKET_SIZE];
 
     let (b1, b2) = split_into_bytes(OpCode::ACK as u16);
@@ -182,7 +194,7 @@ fn ack_packet_bytes(block_num: u16) -> Result<PacketData, PacketErr> {
     Ok(bytes)
 }
 
-fn error_packet_bytes(code: u16, msg: String) -> Result<PacketData, PacketErr> {
+fn error_packet_bytes(code: u16, msg: String) -> Result<PacketData> {
     if msg.len() + 5 > MAX_PACKET_SIZE {
         return Err(PacketErr::OverflowSize);
     }

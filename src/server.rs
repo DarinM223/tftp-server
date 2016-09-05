@@ -13,8 +13,11 @@ impl TFTPServer {
         Ok(TFTPServer { socket: socket })
     }
 
-    pub fn handle_packet(&self, addr: &SocketAddr, bytes: [u8; MAX_PACKET_SIZE]) -> bool {
-        let packet = Packet::read(bytes);
+    pub fn handle_packet(&self,
+                         addr: &SocketAddr,
+                         bytes: [u8; MAX_PACKET_SIZE])
+                         -> io::Result<bool> {
+        let packet = try!(Packet::read(bytes));
         match packet {
             Packet::RRQ { .. } => {}
             Packet::WRQ { .. } => {}
@@ -22,14 +25,15 @@ impl TFTPServer {
             Packet::ACK(_) => {}
             Packet::ERROR { .. } => {}
         }
-        false
+
+        Ok(false)
     }
 
     pub fn run(&self) -> io::Result<()> {
         while true {
             let mut buf = [0; MAX_PACKET_SIZE];
             let (_, src) = try!(self.socket.recv_from(&mut buf));
-            if self.handle_packet(&src, buf) {
+            if try!(self.handle_packet(&src, buf)) {
                 break;
             }
         }
