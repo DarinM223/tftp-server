@@ -1,7 +1,7 @@
-use std::{mem, result, str};
-use std::io;
+use std::{fmt, io, mem, result, str};
 
 #[repr(u16)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum OpCode {
     RRQ = 1,
     WRQ = 2,
@@ -18,6 +18,7 @@ impl OpCode {
 }
 
 #[repr(u16)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum ErrorCode {
     NotDefined = 0,
     FileNotFound = 1,
@@ -40,6 +41,41 @@ pub const MODES: [&'static str; 3] = ["netascii", "octet", "mail"];
 pub const MAX_PACKET_SIZE: usize = 1024;
 pub const MAX_DATA_SIZE: usize = 516;
 
+pub type PacketData = [u8; MAX_PACKET_SIZE];
+pub type Result<T> = result::Result<T, PacketErr>;
+
+pub struct DataBytes([u8; 512]);
+
+impl PartialEq for DataBytes {
+    fn eq(&self, other: &DataBytes) -> bool {
+        for i in 0..512 {
+            if self.0[i] != other.0[i] {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+impl Clone for DataBytes {
+    fn clone(&self) -> DataBytes {
+        let mut bytes = [0; 512];
+        for i in 0..512 {
+            bytes[i] = self.0[i];
+        }
+
+        DataBytes(bytes)
+    }
+}
+
+impl fmt::Debug for DataBytes {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", String::from_utf8_lossy(&self.0[..]))
+    }
+}
+
+#[derive(PartialEq, Clone, Debug)]
 pub enum Packet {
     RRQ {
         filename: String,
@@ -51,7 +87,7 @@ pub enum Packet {
     },
     DATA {
         block_num: u16,
-        data: [u8; 512],
+        data: DataBytes,
     },
     ACK(u16),
     ERROR {
@@ -59,9 +95,6 @@ pub enum Packet {
         msg: String,
     },
 }
-
-pub type PacketData = [u8; MAX_PACKET_SIZE];
-pub type Result<T> = result::Result<T, PacketErr>;
 
 pub enum PacketErr {
     OverflowSize,
@@ -123,7 +156,7 @@ impl Packet {
         match self {
             Packet::RRQ { filename, mode } => rw_packet_bytes(OpCode::RRQ, filename, mode),
             Packet::WRQ { filename, mode } => rw_packet_bytes(OpCode::WRQ, filename, mode),
-            Packet::DATA { block_num, data } => data_packet_bytes(block_num, data),
+            Packet::DATA { block_num, data } => data_packet_bytes(block_num, data.0),
             Packet::ACK(block_num) => ack_packet_bytes(block_num),
             Packet::ERROR { code, msg } => error_packet_bytes(code, msg),
         }
@@ -191,7 +224,7 @@ fn read_data_packet(bytes: PacketData) -> Result<Packet> {
 
     Ok(Packet::DATA {
         block_num: block_num,
-        data: data,
+        data: DataBytes(data),
     })
 }
 
@@ -292,4 +325,93 @@ fn error_packet_bytes(code: ErrorCode, msg: String) -> Result<PacketData> {
     }
 
     Ok(bytes)
+}
+
+#[test]
+fn test_split_merge_bytes() {
+    let tests = [0, 1234, 9876];
+    for test in tests.iter() {
+        let (b1, b2) = split_into_bytes(*test);
+        let merged = merge_bytes(b1, b2);
+
+        assert_eq!(*test, merged);
+    }
+}
+
+macro_rules! read_string {
+    ($name:ident, $bytes:expr, $start_pos:expr, $string:expr, $end_pos:expr) => {
+        #[test]
+        fn $name() {
+            let mut bytes = [0; MAX_PACKET_SIZE];
+            let seed_bytes = $bytes.chars().collect::<Vec<_>>();
+            for i in 0..$bytes.len() {
+                bytes[i] = seed_bytes[i] as u8;
+            }
+
+            let result = read_string(bytes, $start_pos);
+            assert!(result.is_ok());
+            let _ = result.map(|(string, end_pos)| {
+                assert_eq!(string, $string);
+                assert_eq!(end_pos, $end_pos);
+            });
+        }
+    };
+}
+
+read_string!(test_read_string_normal,
+             "hello world!\0",
+             0,
+             "hello world!",
+             13);
+read_string!(test_read_string_zero_in_mid,
+             "hello wor\0ld!",
+             0,
+             "hello wor",
+             10);
+read_string!(test_read_string_diff_start_pos,
+             "hello world!\0",
+             6,
+             "world!",
+             13);
+
+#[cfg(test)]
+mod packet_tests {
+    use super::*;
+
+    macro_rules! packet {
+        ($name:ident, $packet:expr) => {
+            #[test]
+            fn $name() {
+                let bytes = $packet.clone().bytes();
+                assert!(bytes.is_ok());
+                let packet = bytes.and_then(|bytes| Packet::read(bytes));
+                assert!(packet.is_ok());
+                let _ = packet.map(|packet| { assert_eq!(packet, $packet); });
+            }
+        };
+    }
+
+    const BYTE_DATA: [u8; 512] = [123; 512];
+
+    packet!(rrq,
+            Packet::RRQ {
+                filename: "/a/b/c/hello.txt".to_string(),
+                mode: "netascii".to_string(),
+            });
+    packet!(wrq,
+            Packet::WRQ {
+                filename: "./world.txt".to_string(),
+                mode: "octet".to_string(),
+            });
+    packet!(ack, Packet::ACK(1234));
+    packet!(data,
+            Packet::DATA {
+                block_num: 1234,
+                data: DataBytes(BYTE_DATA),
+            });
+    packet!(err,
+            Packet::ERROR {
+                code: ErrorCode::NoUser,
+                msg: "This is a message".to_string(),
+            });
 }
