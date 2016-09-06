@@ -29,6 +29,13 @@ pub enum ErrorCode {
     NoUser = 7,
 }
 
+impl ErrorCode {
+    pub fn from_u16(i: u16) -> ErrorCode {
+        assert!(i >= ErrorCode::NotDefined as u16 && i <= ErrorCode::NoUser as u16);
+        unsafe { mem::transmute(i) }
+    }
+}
+
 pub const MODES: [&'static str; 3] = ["netascii", "octet", "mail"];
 pub const MAX_PACKET_SIZE: usize = 1024;
 pub const MAX_DATA_SIZE: usize = 516;
@@ -36,11 +43,11 @@ pub const MAX_DATA_SIZE: usize = 516;
 pub enum Packet {
     RRQ {
         filename: String,
-        mode: &'static str,
+        mode: String,
     },
     WRQ {
         filename: String,
-        mode: &'static str,
+        mode: String,
     },
     DATA {
         block_num: u16,
@@ -48,7 +55,7 @@ pub enum Packet {
     },
     ACK(u16),
     ERROR {
-        code: u16,
+        code: ErrorCode,
         msg: String,
     },
 }
@@ -58,12 +65,14 @@ pub type Result<T> = result::Result<T, PacketErr>;
 
 pub enum PacketErr {
     OverflowSize,
+    InvalidOpCode,
 }
 
 impl PacketErr {
     pub fn str(&self) -> &'static str {
         match *self {
             PacketErr::OverflowSize => "Packet size has overflowed",
+            PacketErr::InvalidOpCode => "Packet opcode is invalid",
         }
     }
 }
@@ -75,6 +84,7 @@ impl From<PacketErr> for io::Error {
 }
 
 impl Packet {
+    /// Creates and returns a packet parsed from its byte representation.
     pub fn read(bytes: PacketData) -> Result<Packet> {
         let opcode = OpCode::from_u16(merge_bytes(bytes[0], bytes[1]));
         match opcode {
@@ -118,23 +128,61 @@ pub fn merge_bytes(num1: u8, num2: u8) -> u16 {
     unimplemented!()
 }
 
-fn read_rw_packet(code: OpCode, bytes: PacketData) -> Result<Packet> {
+fn read_string(bytes: PacketData, start: usize) -> Result<(String, usize)> {
     unimplemented!()
+}
+
+fn read_rw_packet(code: OpCode, bytes: PacketData) -> Result<Packet> {
+    let (filename, end_pos) = try!(read_string(bytes, 2));
+    let (mode, _) = try!(read_string(bytes, end_pos));
+
+    match code {
+        OpCode::RRQ => {
+            Ok(Packet::RRQ {
+                filename: filename,
+                mode: mode,
+            })
+        }
+        OpCode::WRQ => {
+            Ok(Packet::WRQ {
+                filename: filename,
+                mode: mode,
+            })
+        }
+        _ => Err(PacketErr::InvalidOpCode),
+    }
 }
 
 fn read_data_packet(bytes: PacketData) -> Result<Packet> {
-    unimplemented!()
+    let block_num = merge_bytes(bytes[2], bytes[3]);
+    let mut data = [0; 512];
+    // TODO(DarinM223): refactor to use iterators instead of indexing
+    for i in 0..512 {
+        data[i] = bytes[i + 4];
+    }
+
+    Ok(Packet::DATA {
+        block_num: block_num,
+        data: data,
+    })
 }
 
 fn read_ack_packet(bytes: PacketData) -> Result<Packet> {
-    unimplemented!()
+    let block_num = merge_bytes(bytes[2], bytes[3]);
+    Ok(Packet::ACK(block_num))
 }
 
 fn read_error_packet(bytes: PacketData) -> Result<Packet> {
-    unimplemented!()
+    let error_code = ErrorCode::from_u16(merge_bytes(bytes[2], bytes[3]));
+    let (msg, _) = try!(read_string(bytes, 4));
+
+    Ok(Packet::ERROR {
+        code: error_code,
+        msg: msg,
+    })
 }
 
-fn rw_packet_bytes(packet: OpCode, filename: String, mode: &'static str) -> Result<PacketData> {
+fn rw_packet_bytes(packet: OpCode, filename: String, mode: String) -> Result<PacketData> {
     if filename.len() + mode.len() > MAX_PACKET_SIZE {
         return Err(PacketErr::OverflowSize);
     }
@@ -194,7 +242,7 @@ fn ack_packet_bytes(block_num: u16) -> Result<PacketData> {
     Ok(bytes)
 }
 
-fn error_packet_bytes(code: u16, msg: String) -> Result<PacketData> {
+fn error_packet_bytes(code: ErrorCode, msg: String) -> Result<PacketData> {
     if msg.len() + 5 > MAX_PACKET_SIZE {
         return Err(PacketErr::OverflowSize);
     }
@@ -205,7 +253,7 @@ fn error_packet_bytes(code: u16, msg: String) -> Result<PacketData> {
     bytes[0] = b1;
     bytes[1] = b2;
 
-    let (b3, b4) = split_into_bytes(code);
+    let (b3, b4) = split_into_bytes(code as u16);
     bytes[2] = b3;
     bytes[3] = b4;
 

@@ -8,7 +8,7 @@ fn main() {
     let args: Vec<_> = env::args().collect();
     if args.len() > 1 {
         let addr = args[1].clone();
-        let server = TFTPServer::new(&addr[..]).expect("Error creating server");
+        let server = TFTPServer::new(addr.as_str()).expect("Error creating server");
         match server.run() {
             Ok(_) => println!("Server completed successfully!"),
             Err(e) => println!("Error: {:?}", e),
