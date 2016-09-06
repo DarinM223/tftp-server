@@ -1,4 +1,4 @@
-use data::{MAX_PACKET_SIZE, merge_bytes, OpCode, Packet};
+use data::{MAX_PACKET_SIZE, Packet};
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 
@@ -30,7 +30,7 @@ impl TFTPServer {
     }
 
     pub fn run(&self) -> io::Result<()> {
-        while true {
+        loop {
             let mut buf = [0; MAX_PACKET_SIZE];
             let (_, src) = try!(self.socket.recv_from(&mut buf));
             if try!(self.handle_packet(&src, buf)) {

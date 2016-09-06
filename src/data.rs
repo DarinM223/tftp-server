@@ -1,4 +1,4 @@
-use std::{mem, result};
+use std::{mem, result, str};
 use std::io;
 
 #[repr(u16)]
@@ -66,20 +66,32 @@ pub type Result<T> = result::Result<T, PacketErr>;
 pub enum PacketErr {
     OverflowSize,
     InvalidOpCode,
+    StrOutOfBounds,
+    Utf8Error(usize),
 }
 
 impl PacketErr {
-    pub fn str(&self) -> &'static str {
+    pub fn to_string(&self) -> String {
         match *self {
-            PacketErr::OverflowSize => "Packet size has overflowed",
-            PacketErr::InvalidOpCode => "Packet opcode is invalid",
+            PacketErr::OverflowSize => "Packet size has overflowed".to_string(),
+            PacketErr::InvalidOpCode => "Packet opcode is invalid".to_string(),
+            PacketErr::StrOutOfBounds => {
+                "A string in the packet is not zero byte terminated".to_string()
+            }
+            PacketErr::Utf8Error(up_to) => format!("UTF8 string only valid up to {}", up_to),
         }
     }
 }
 
 impl From<PacketErr> for io::Error {
     fn from(err: PacketErr) -> io::Error {
-        io::Error::new(io::ErrorKind::Other, err.str())
+        io::Error::new(io::ErrorKind::Other, err.to_string())
+    }
+}
+
+impl From<str::Utf8Error> for PacketErr {
+    fn from(err: str::Utf8Error) -> PacketErr {
+        PacketErr::Utf8Error(err.valid_up_to())
     }
 }
 
@@ -119,17 +131,33 @@ impl Packet {
 }
 
 /// Splits a two byte unsigned integer into two one byte unsigned integers.
-pub fn split_into_bytes(num: u16) -> (u8, u8) {
+fn split_into_bytes(num: u16) -> (u8, u8) {
     let (b0, b1) = (num & 0xFF, (num >> 8) & (0xFF));
     (b0 as u8, b1 as u8)
 }
 
-pub fn merge_bytes(num1: u8, num2: u8) -> u16 {
-    unimplemented!()
+/// Merges two 1 byte unsigned integers into a two byte unsigned integer.
+fn merge_bytes(num1: u8, num2: u8) -> u16 {
+    (num1 as u16) + ((num2 as u16) << 8)
 }
 
+/// Reads bytes from the packet bytes starting from the given index
+/// until the zero byte and returns a string containing the bytes read.
 fn read_string(bytes: PacketData, start: usize) -> Result<(String, usize)> {
-    unimplemented!()
+    let mut result_bytes = Vec::new();
+    let mut counter = start;
+    while bytes[counter] != 0 {
+        result_bytes.push(bytes[counter]);
+
+        counter += 1;
+        if counter >= bytes.len() {
+            return Err(PacketErr::StrOutOfBounds);
+        }
+    }
+    counter += 1;
+
+    let result_str = try!(str::from_utf8(result_bytes.as_slice())).to_string();
+    Ok((result_str, counter))
 }
 
 fn read_rw_packet(code: OpCode, bytes: PacketData) -> Result<Packet> {
