@@ -1,40 +1,60 @@
 use data::{MAX_PACKET_SIZE, Packet};
+use mio::*;
+use mio::udp::UdpSocket;
+
+use std::collections::HashMap;
 use std::io;
-use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
+use std::net::SocketAddr;
+
+const SERVER: Token = Token(0);
 
 pub struct TFTPServer {
-    socket: UdpSocket,
+    new_token: usize,
+    poll: Poll,
+    states: HashMap<Token, ()>,
 }
 
 impl TFTPServer {
-    pub fn new<A: ToSocketAddrs>(addr: A) -> io::Result<TFTPServer> {
-        let socket = try!(UdpSocket::bind(addr));
+    pub fn new(addr: &SocketAddr) -> io::Result<TFTPServer> {
+        let poll: Poll = try!(Poll::new());
+        let socket: UdpSocket = try!(UdpSocket::bind(addr));
+        try!(poll.register(&socket, SERVER, Ready::readable(), PollOpt::edge()));
 
-        Ok(TFTPServer { socket: socket })
+        Ok(TFTPServer {
+            new_token: 1,
+            poll: poll,
+            states: HashMap::new(),
+        })
     }
 
-    pub fn handle_packet(&self,
-                         addr: &SocketAddr,
-                         bytes: [u8; MAX_PACKET_SIZE])
-                         -> io::Result<bool> {
-        let packet = try!(Packet::read(bytes));
-        match packet {
-            Packet::RRQ { .. } => {}
-            Packet::WRQ { .. } => {}
-            Packet::DATA { .. } => {}
-            Packet::ACK(_) => {}
-            Packet::ERROR { .. } => {}
-        }
-
-        Ok(false)
+    fn generate_port_number(&self) -> i32 {
+        unimplemented!()
     }
 
-    pub fn run(&self) -> io::Result<()> {
-        loop {
-            let mut buf = [0; MAX_PACKET_SIZE];
-            let (_, src) = try!(self.socket.recv_from(&mut buf));
-            if try!(self.handle_packet(&src, buf)) {
-                break;
+    fn handle_server_packet(&mut self) -> io::Result<bool> {
+        unimplemented!()
+    }
+
+    fn handle_connection_packet(&mut self, token: Token) -> io::Result<bool> {
+        unimplemented!()
+    }
+
+    pub fn run(&mut self) -> io::Result<()> {
+        let mut events = Events::with_capacity(1024);
+        'main_loop: loop {
+            try!(self.poll.poll(&mut events, None));
+
+            for event in events.iter() {
+                let finished = match event.token() {
+                    SERVER => try!(self.handle_server_packet()),
+                    tok if self.states.get(&tok).is_some() => {
+                        try!(self.handle_connection_packet(tok))
+                    }
+                    _ => unreachable!(),
+                };
+                if finished {
+                    break 'main_loop;
+                }
             }
         }
 
