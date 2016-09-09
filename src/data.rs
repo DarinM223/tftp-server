@@ -44,7 +44,7 @@ pub const MAX_DATA_SIZE: usize = 516;
 pub type PacketData = [u8; MAX_PACKET_SIZE];
 pub type Result<T> = result::Result<T, PacketErr>;
 
-pub struct DataBytes([u8; 512]);
+pub struct DataBytes(pub [u8; 512]);
 
 impl PartialEq for DataBytes {
     fn eq(&self, other: &DataBytes) -> bool {
@@ -73,27 +73,6 @@ impl fmt::Debug for DataBytes {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", String::from_utf8_lossy(&self.0[..]))
     }
-}
-
-#[derive(PartialEq, Clone, Debug)]
-pub enum Packet {
-    RRQ {
-        filename: String,
-        mode: String,
-    },
-    WRQ {
-        filename: String,
-        mode: String,
-    },
-    DATA {
-        block_num: u16,
-        data: DataBytes,
-    },
-    ACK(u16),
-    ERROR {
-        code: ErrorCode,
-        msg: String,
-    },
 }
 
 pub enum PacketErr {
@@ -126,6 +105,27 @@ impl From<str::Utf8Error> for PacketErr {
     fn from(err: str::Utf8Error) -> PacketErr {
         PacketErr::Utf8Error(err.valid_up_to())
     }
+}
+
+#[derive(PartialEq, Clone, Debug)]
+pub enum Packet {
+    RRQ {
+        filename: String,
+        mode: String,
+    },
+    WRQ {
+        filename: String,
+        mode: String,
+    },
+    DATA {
+        block_num: u16,
+        data: DataBytes,
+    },
+    ACK(u16),
+    ERROR {
+        code: ErrorCode,
+        msg: String,
+    },
 }
 
 impl Packet {
