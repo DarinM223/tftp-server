@@ -1,4 +1,5 @@
 extern crate mio;
+extern crate rand;
 
 mod data;
 mod server;
@@ -11,7 +12,8 @@ use std::net::SocketAddr;
 fn main() {
     let args: Vec<_> = env::args().collect();
     if args.len() > 1 {
-        let addr = args[1].clone();
+        let port = args[1].clone();
+        let addr = format!("127.0.0.1:{}", port);
         let socket_addr = SocketAddr::from_str(addr.as_str()).expect("Error parsing address");
         let mut server = TftpServer::new(&socket_addr).expect("Error creating server");
         match server.run() {

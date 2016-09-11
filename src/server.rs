@@ -3,6 +3,8 @@ use mio::*;
 use mio::timer::{Timer, Timeout};
 use mio::udp::UdpSocket;
 
+use rand;
+use rand::Rng;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io;
@@ -49,8 +51,25 @@ impl TftpServer {
         })
     }
 
-    fn generate_port_number(&self) -> i32 {
-        unimplemented!()
+    fn create_socket(&self) -> io::Result<UdpSocket> {
+        let mut num_failures = 0;
+        loop {
+            let mut port = rand::thread_rng().gen_range(0, 65535);
+            let addr = format!("127.0.0.1:{}", port);
+            let socket_addr = SocketAddr::from_str(addr.as_str()).expect("Error parsing address");
+            match UdpSocket::bind(&socket_addr) {
+                Ok(socket) => return Ok(socket),
+                Err(_) => {
+                    num_failures += 1;
+                    if num_failures > 100 {
+                        return Err(io::Error::new(io::ErrorKind::NotFound,
+                                                  "Cannot find available port"));
+                    }
+                }
+            }
+        }
+
+        unreachable!()
     }
 
     fn generate_token(&mut self) -> Token {
@@ -73,10 +92,7 @@ impl TftpServer {
             }
         }
 
-        let port_number = self.generate_port_number();
-        let addr = format!("127.0.0.1:{}", port_number);
-        let socket_addr = SocketAddr::from_str(addr.as_str()).unwrap();
-        let socket: UdpSocket = try!(UdpSocket::bind(&socket_addr));
+        let socket = try!(self.create_socket());
         let token = self.generate_token();
 
         try!(self.poll.register(&socket, token, Ready::readable(), PollOpt::edge()));
@@ -88,6 +104,9 @@ impl TftpServer {
         // Handle the RRQ or WRQ packet
         match packet {
             Packet::RRQ { filename, mode } => {
+                println!("Received RRQ packet with filename {} and mode {}",
+                         filename,
+                         mode);
                 file = try!(File::open(filename));
                 block_num = 1;
 
@@ -101,6 +120,9 @@ impl TftpServer {
                 };
             }
             Packet::WRQ { filename, mode } => {
+                println!("Received WRQ packet with filename {} and mode {}",
+                         filename,
+                         mode);
                 file = try!(File::create(filename));
                 block_num = 0;
 
@@ -129,6 +151,7 @@ impl TftpServer {
     fn handle_timer(&mut self) -> io::Result<bool> {
         let token = self.timer.poll().unwrap();
         if let Some(ref mut conn) = self.connections.get_mut(&token) {
+            println!("Timeout: resending last packet");
             let last_packet = conn.last_packet.clone();
             let last_packet_bytes = try!(last_packet.bytes());
             try!(conn.conn.send_to(&last_packet_bytes[..], &conn.addr));
@@ -145,6 +168,7 @@ impl TftpServer {
 
             match packet {
                 Packet::ACK(block_num) => {
+                    println!("Received ACK with block number {}", block_num);
                     if block_num != conn.block_num {
                         // TODO(DarinM223): handle error
                         panic!("Invalid block number received");
@@ -163,6 +187,7 @@ impl TftpServer {
                     try!(conn.conn.send_to(&packet_bytes[..], &conn.addr));
                 }
                 Packet::DATA { block_num, data } => {
+                    println!("Received data with block number {}", block_num);
                     if block_num != conn.block_num + 1 {
                         // TODO(DarinM223): handle error
                         panic!("Invalid block number received");
@@ -195,6 +220,7 @@ impl TftpServer {
         let mut events = Events::with_capacity(1024);
         'main_loop: loop {
             try!(self.poll.poll(&mut events, None));
+            println!("Received event");
 
             for event in events.iter() {
                 let finished = match event.token() {
