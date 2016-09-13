@@ -1,8 +1,7 @@
-use data::{MAX_PACKET_SIZE, DataBytes, Packet};
 use mio::*;
 use mio::timer::{Timer, Timeout};
 use mio::udp::UdpSocket;
-
+use packet::{MAX_PACKET_SIZE, DataBytes, Packet};
 use rand;
 use rand::Rng;
 use std::collections::HashMap;
@@ -68,8 +67,6 @@ impl TftpServer {
                 }
             }
         }
-
-        unreachable!()
     }
 
     fn generate_token(&mut self) -> Token {

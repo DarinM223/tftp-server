@@ -1,8 +1,16 @@
 [package]
-name = "tftp-server"
+name = "tftp_server"
 version = "0.1.0"
 authors = ["darin <darinm223@gmail.com>"]
 
 [dependencies]
 mio = "0.6"
 rand = "0.3"
+
+[lib]
+name = "tftp_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tftp_server_bin"
+path = "src/bin.rs"

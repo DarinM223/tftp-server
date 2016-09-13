@@ -1,10 +1,6 @@
-extern crate mio;
-extern crate rand;
+extern crate tftp_server;
 
-mod data;
-mod server;
-
-use server::TftpServer;
+use tftp_server::server::TftpServer;
 use std::env;
 use std::str::FromStr;
 use std::net::SocketAddr;
