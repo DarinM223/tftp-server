@@ -7,6 +7,8 @@ use std::time::Duration;
 use tftp_server::packet::{Packet, MAX_PACKET_SIZE};
 use tftp_server::server::TftpServer;
 
+// TODO(DarinM223): change this to work on multiple computers with different
+// default open ports.
 pub const SERVER_PORT: i32 = 3554;
 pub const CLIENT_PORT: i32 = 3553;
 
@@ -17,7 +19,7 @@ fn port_addr(port: i32) -> SocketAddr {
 
 /// Starts the server in a new thread.
 pub fn start_server(addr: SocketAddr) {
-    let mut server_thread = thread::spawn(move || {
+    thread::spawn(move || {
         let mut server = TftpServer::new(&addr).expect("Error creating test server");
         if let Err(e) = server.run() {
             println!("Error with server: {:?}", e);
@@ -32,7 +34,7 @@ pub fn test_tftp(client_addr: &SocketAddr,
                  server_addr: &SocketAddr,
                  input_msgs: Vec<Packet>,
                  output_msgs: Vec<Packet>) {
-    let mut socket = UdpSocket::bind(client_addr).expect("Error creating client socket");
+    let socket = UdpSocket::bind(client_addr).expect("Error creating client socket");
     socket.set_write_timeout(Some(Duration::from_secs(5)));
     socket.set_read_timeout(Some(Duration::from_secs(3)));
 

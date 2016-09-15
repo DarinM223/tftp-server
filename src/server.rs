@@ -38,7 +38,7 @@ impl TftpServer {
         let poll = try!(Poll::new());
         let socket = try!(UdpSocket::bind(addr));
         let timer = Timer::default();
-        try!(poll.register(&socket, SERVER, Ready::readable(), PollOpt::edge()));
+        try!(poll.register(&socket, SERVER, Ready::all(), PollOpt::edge()));
         try!(poll.register(&timer, TIMER, Ready::readable(), PollOpt::edge()));
 
         Ok(TftpServer {
@@ -77,7 +77,9 @@ impl TftpServer {
 
     fn handle_server_packet(&mut self) -> io::Result<bool> {
         let mut buf = [0; MAX_PACKET_SIZE];
-        let (_, src) = try!(self.socket.recv_from(&mut buf)).unwrap();
+        // TODO(DarinM223): recv_from returns None, how to get source address from socket?
+        let (_, src) = try!(self.socket.recv_from(&mut buf))
+            .expect("Error getting source address from socket");
         let packet = try!(Packet::read(buf));
         // Only allow RRQ and WRQ packets to be received
         match packet {
@@ -92,11 +94,13 @@ impl TftpServer {
         let socket = try!(self.create_socket());
         let token = self.generate_token();
 
-        try!(self.poll.register(&socket, token, Ready::readable(), PollOpt::edge()));
+        try!(self.poll.register(&socket, token, Ready::all(), PollOpt::edge()));
 
         let mut file: File;
         let block_num: u16;
-        let timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT_LENGTH), token).unwrap();
+        let timeout = self.timer
+            .set_timeout(Duration::from_secs(TIMEOUT_LENGTH), token)
+            .expect("Error setting timeout");
         let last_packet: Packet;
         // Handle the RRQ or WRQ packet
         match packet {
