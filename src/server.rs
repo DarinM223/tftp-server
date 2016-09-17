@@ -80,7 +80,7 @@ impl TftpServer {
         let src = match try!(self.socket.recv_from(&mut buf)) {
             Some((_, src)) => src,
             None => {
-                println!("Getting None when receiving from socket");
+                println!("Getting None when receiving from server socket");
                 return Ok(false);
             }
         };
@@ -154,7 +154,7 @@ impl TftpServer {
     }
 
     fn handle_timer(&mut self) -> io::Result<bool> {
-        let token = self.timer.poll().unwrap();
+        let token = self.timer.poll().expect("Error receiving token from event loop");
         if let Some(ref mut conn) = self.connections.get_mut(&token) {
             println!("Timeout: resending last packet");
             let last_packet = conn.last_packet.clone();
@@ -168,7 +168,13 @@ impl TftpServer {
     fn handle_connection_packet(&mut self, token: Token) -> io::Result<bool> {
         if let Some(ref mut conn) = self.connections.get_mut(&token) {
             let mut buf = [0; MAX_PACKET_SIZE];
-            let (_, src) = try!(conn.conn.recv_from(&mut buf)).unwrap();
+            let src = match try!(conn.conn.recv_from(&mut buf)) {
+                Some((_, src)) => src,
+                None => {
+                    println!("Getting None when receiving from connection socket");
+                    return Ok(false);
+                }
+            };
             let packet = try!(Packet::read(buf));
 
             match packet {

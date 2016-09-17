@@ -1,10 +1,12 @@
 extern crate tftp_server;
 
+use std::fs;
+use std::io::Read;
 use std::net::{SocketAddr, UdpSocket};
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
-use tftp_server::packet::{Packet, MAX_PACKET_SIZE};
+use tftp_server::packet::{DataBytes, Packet, MAX_PACKET_SIZE};
 use tftp_server::server::TftpServer;
 
 // TODO(DarinM223): change this to work on multiple computers with different
@@ -49,7 +51,7 @@ pub fn test_tftp(client_addr: &SocketAddr,
     }
 }
 
-fn sample_test(server_addr: &SocketAddr) {
+fn wrq_initial_ack_test(server_addr: &SocketAddr) {
     let client_addr = port_addr(CLIENT_PORT);
     let input_packets = vec![Packet::WRQ {
                                  filename: "hello.txt".to_string(),
@@ -57,11 +59,32 @@ fn sample_test(server_addr: &SocketAddr) {
                              }];
     let expected_packets = vec![Packet::ACK(0)];
     test_tftp(&client_addr, server_addr, input_packets, expected_packets);
+
+    // Test that hello.txt was created and remove hello.txt
+    assert!(fs::metadata("./hello.txt").is_ok());
+    assert!(fs::remove_file("./hello.txt").is_ok());
+}
+
+fn rrq_initial_data_test(server_addr: &SocketAddr) {
+    let client_addr = port_addr(CLIENT_PORT);
+    let input_packets = vec![Packet::RRQ {
+                                 filename: "./files/hello.txt".to_string(),
+                                 mode: "octet".to_string(),
+                             }];
+    let mut file = fs::File::open("./files/hello.txt").expect("Error opening test file");
+    let mut buf = [0; 512];
+    file.read(&mut buf).expect("Error reading from test file");
+    let expected_packets = vec![Packet::DATA {
+                                    block_num: 1,
+                                    data: DataBytes(buf),
+                                }];
+    test_tftp(&client_addr, server_addr, input_packets, expected_packets);
 }
 
 fn main() {
     let server_addr = port_addr(SERVER_PORT);
     start_server(server_addr.clone());
     thread::sleep_ms(1000);
-    sample_test(&server_addr);
+    wrq_initial_ack_test(&server_addr);
+    rrq_initial_data_test(&server_addr);
 }
