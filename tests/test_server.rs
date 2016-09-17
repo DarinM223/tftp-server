@@ -62,5 +62,6 @@ fn sample_test(server_addr: &SocketAddr) {
 fn main() {
     let server_addr = port_addr(SERVER_PORT);
     start_server(server_addr.clone());
+    thread::sleep_ms(1000);
     sample_test(&server_addr);
 }

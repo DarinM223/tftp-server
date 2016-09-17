@@ -77,9 +77,13 @@ impl TftpServer {
 
     fn handle_server_packet(&mut self) -> io::Result<bool> {
         let mut buf = [0; MAX_PACKET_SIZE];
-        // TODO(DarinM223): recv_from returns None, how to get source address from socket?
-        let (_, src) = try!(self.socket.recv_from(&mut buf))
-            .expect("Error getting source address from socket");
+        let src = match try!(self.socket.recv_from(&mut buf)) {
+            Some((_, src)) => src,
+            None => {
+                println!("Getting None when receiving from socket");
+                return Ok(false);
+            }
+        };
         let packet = try!(Packet::read(buf));
         // Only allow RRQ and WRQ packets to be received
         match packet {
@@ -221,7 +225,6 @@ impl TftpServer {
         let mut events = Events::with_capacity(1024);
         'main_loop: loop {
             try!(self.poll.poll(&mut events, None));
-            println!("Received event");
 
             for event in events.iter() {
                 let finished = match event.token() {
