@@ -7,7 +7,7 @@ use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
 use tftp_server::packet::{DataBytes, Packet, MAX_PACKET_SIZE};
-use tftp_server::server::{create_socket, TftpServer};
+use tftp_server::server::{create_socket, incr_block_num, TftpServer};
 
 const TIMEOUT: u64 = 3;
 
@@ -44,6 +44,16 @@ pub fn test_tftp(server_addr: &SocketAddr, input_msgs: Vec<Packet>, output_msgs:
         let reply_packet = Packet::read(reply_buf).expect("Error creating output packet");
         assert_eq!(reply_packet, output);
     }
+}
+
+pub fn check_similar_files(file1: &mut fs::File, file2: &mut fs::File) {
+    let mut buf1 = String::new();
+    let mut buf2 = String::new();
+
+    file1.read_to_string(&mut buf1).expect("Error reading file 1 to string");
+    file2.read_to_string(&mut buf2).expect("Error reading file 2 to string");
+
+    assert_eq!(buf1, buf2);
 }
 
 fn wrq_initial_ack_test(server_addr: &SocketAddr) {
@@ -83,31 +93,37 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) {
     let init_packet_bytes = init_packet.bytes().expect("Error creating init packet");
     socket.send_to(&init_packet_bytes[..], server_addr).expect("Error sending init packet");
 
-    let mut file = fs::File::open("./files/hello.txt").expect("Error opening test file");
-    let mut block_num = 0;
-    loop {
-        let mut reply_buf = [0; MAX_PACKET_SIZE];
-        let (_, src) = socket.recv_from(&mut reply_buf).expect("Error receiving reply from socket");
-        let reply_packet = Packet::read(reply_buf).expect("Error creating reply packet");
+    {
+        let mut file = fs::File::open("./files/hello.txt").expect("Error opening test file");
+        let mut block_num = 0;
+        loop {
+            let mut reply_buf = [0; MAX_PACKET_SIZE];
+            let (_, src) = socket.recv_from(&mut reply_buf)
+                .expect("Error receiving reply from socket");
+            let reply_packet = Packet::read(reply_buf).expect("Error creating reply packet");
 
-        assert_eq!(reply_packet, Packet::ACK(block_num));
-        block_num += 1;
+            assert_eq!(reply_packet, Packet::ACK(block_num));
+            incr_block_num(&mut block_num);
 
-        // Read and send data packet
-        let mut buf = [0; 512];
-        if let Err(_) = file.read(&mut buf) {
-            break;
+            // Read and send data packet
+            let mut buf = [0; 512];
+            match file.read(&mut buf) {
+                Err(_) => break,
+                Ok(i) if i == 0 => break,
+                _ => {}
+            }
+            let data_packet = Packet::DATA {
+                block_num: block_num,
+                data: DataBytes(buf),
+            };
+            let data_packet_bytes = data_packet.bytes().expect("Error creating data packet");
+            socket.send_to(&data_packet_bytes[..], &src);
         }
-        let data_packet = Packet::DATA {
-            block_num: block_num,
-            data: DataBytes(buf),
-        };
-        let data_packet_bytes = data_packet.bytes().expect("Error creating data packet");
-        socket.send_to(&data_packet_bytes[..], &src);
     }
 
     assert!(fs::metadata("./hello.txt").is_ok());
-    // TODO(DarinM223): test that file is identical to ./files/hello.txt
+    check_similar_files(&mut fs::File::open("./hello.txt").unwrap(),
+                        &mut fs::File::open("./files/hello.txt").unwrap());
     assert!(fs::remove_file("./hello.txt").is_ok());
 }
 

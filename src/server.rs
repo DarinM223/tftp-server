@@ -12,6 +12,7 @@ use std::net;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
+use std::u16;
 
 const TIMEOUT_LENGTH: u64 = 5;
 const SERVER: Token = Token(0);
@@ -189,7 +190,7 @@ impl TftpServer {
                         panic!("Invalid block number received");
                     }
 
-                    conn.block_num += 1;
+                    incr_block_num(&mut conn.block_num);
                     let mut buf = [0; 512];
                     try!(conn.file.read(&mut buf));
 
@@ -203,12 +204,12 @@ impl TftpServer {
                 }
                 Packet::DATA { block_num, data } => {
                     println!("Received data with block number {}", block_num);
-                    if block_num != conn.block_num + 1 {
+
+                    incr_block_num(&mut conn.block_num);
+                    if block_num != conn.block_num {
                         // TODO(DarinM223): handle error
                         panic!("Invalid block number received");
                     }
-
-                    conn.block_num += 1;
                     try!(conn.file.write(&data.0[..]));
 
                     // Send ACK packet for data
@@ -281,5 +282,13 @@ pub fn create_socket(timeout: Duration) -> io::Result<net::UdpSocket> {
                 }
             }
         }
+    }
+}
+
+pub fn incr_block_num(block_num: &mut u16) {
+    if *block_num == u16::MAX - 1 {
+        *block_num = 0;
+    } else {
+        *block_num += 1;
     }
 }
