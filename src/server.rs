@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io;
 use std::io::{Read, Write};
+use std::net;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
@@ -34,7 +35,24 @@ pub struct TftpServer {
 }
 
 impl TftpServer {
-    pub fn new(addr: &SocketAddr) -> io::Result<TftpServer> {
+    pub fn new() -> io::Result<TftpServer> {
+        let poll = try!(Poll::new());
+        let socket =
+            try!(UdpSocket::from_socket(try!(create_socket(Duration::from_secs(TIMEOUT_LENGTH)))));
+        let timer = Timer::default();
+        try!(poll.register(&socket, SERVER, Ready::all(), PollOpt::edge()));
+        try!(poll.register(&timer, TIMER, Ready::readable(), PollOpt::edge()));
+
+        Ok(TftpServer {
+            new_token: 2,
+            poll: poll,
+            timer: timer,
+            socket: socket,
+            connections: HashMap::new(),
+        })
+    }
+
+    pub fn new_from_addr(addr: &SocketAddr) -> io::Result<TftpServer> {
         let poll = try!(Poll::new());
         let socket = try!(UdpSocket::bind(addr));
         let timer = Timer::default();
@@ -50,24 +68,6 @@ impl TftpServer {
         })
     }
 
-    fn create_socket(&self) -> io::Result<UdpSocket> {
-        let mut num_failures = 0;
-        loop {
-            let mut port = rand::thread_rng().gen_range(0, 65535);
-            let addr = format!("127.0.0.1:{}", port);
-            let socket_addr = SocketAddr::from_str(addr.as_str()).expect("Error parsing address");
-            match UdpSocket::bind(&socket_addr) {
-                Ok(socket) => return Ok(socket),
-                Err(_) => {
-                    num_failures += 1;
-                    if num_failures > 100 {
-                        return Err(io::Error::new(io::ErrorKind::NotFound,
-                                                  "Cannot find available port"));
-                    }
-                }
-            }
-        }
-    }
 
     fn generate_token(&mut self) -> Token {
         let token = Token(self.new_token);
@@ -95,7 +95,8 @@ impl TftpServer {
             }
         }
 
-        let socket = try!(self.create_socket());
+        let socket =
+            try!(UdpSocket::from_socket(try!(create_socket(Duration::from_secs(TIMEOUT_LENGTH)))));
         let token = self.generate_token();
 
         try!(self.poll.register(&socket, token, Ready::all(), PollOpt::edge()));
@@ -154,7 +155,10 @@ impl TftpServer {
     }
 
     fn handle_timer(&mut self) -> io::Result<bool> {
-        let token = self.timer.poll().expect("Error receiving token from event loop");
+        let token = match self.timer.poll() {
+            Some(token) => token,
+            None => return Ok(false),
+        };
         if let Some(ref mut conn) = self.connections.get_mut(&token) {
             println!("Timeout: resending last packet");
             let last_packet = conn.last_packet.clone();
@@ -190,11 +194,11 @@ impl TftpServer {
                     try!(conn.file.read(&mut buf));
 
                     // Send next data packet
-                    let packet = Packet::DATA {
+                    conn.last_packet = Packet::DATA {
                         block_num: conn.block_num,
                         data: DataBytes(buf),
                     };
-                    let packet_bytes = try!(packet.bytes());
+                    let packet_bytes = try!(conn.last_packet.clone().bytes());
                     try!(conn.conn.send_to(&packet_bytes[..], &conn.addr));
                 }
                 Packet::DATA { block_num, data } => {
@@ -208,8 +212,8 @@ impl TftpServer {
                     try!(conn.file.write(&data.0[..]));
 
                     // Send ACK packet for data
-                    let packet = Packet::ACK(conn.block_num);
-                    let packet_bytes = try!(packet.bytes());
+                    conn.last_packet = Packet::ACK(conn.block_num);
+                    let packet_bytes = try!(conn.last_packet.clone().bytes());
                     try!(conn.conn.send_to(&packet_bytes[..], &conn.addr));
                 }
                 Packet::ERROR { .. } => {
@@ -220,8 +224,10 @@ impl TftpServer {
             }
 
             // Reset timeout
-            self.timer.cancel_timeout(&conn.timeout);
-            self.timer.set_timeout(Duration::from_secs(TIMEOUT_LENGTH), token);
+            assert!(self.timer.cancel_timeout(&conn.timeout).is_some());
+            conn.timeout = self.timer
+                .set_timeout(Duration::from_secs(TIMEOUT_LENGTH), token)
+                .expect("Error setting timeout");
         }
 
         Ok(false)
@@ -248,5 +254,32 @@ impl TftpServer {
         }
 
         Ok(())
+    }
+
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.socket.local_addr()
+    }
+}
+
+pub fn create_socket(timeout: Duration) -> io::Result<net::UdpSocket> {
+    let mut num_failures = 0;
+    loop {
+        let mut port = rand::thread_rng().gen_range(0, 65535);
+        let addr = format!("127.0.0.1:{}", port);
+        let socket_addr = SocketAddr::from_str(addr.as_str()).expect("Error parsing address");
+        match net::UdpSocket::bind(&socket_addr) {
+            Ok(socket) => {
+                try!(socket.set_read_timeout(Some(timeout)));
+                try!(socket.set_write_timeout(Some(timeout)));
+                return Ok(socket);
+            }
+            Err(_) => {
+                num_failures += 1;
+                if num_failures > 100 {
+                    return Err(io::Error::new(io::ErrorKind::NotFound,
+                                              "Cannot find available port"));
+                }
+            }
+        }
     }
 }
