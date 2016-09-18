@@ -1,7 +1,7 @@
 use mio::*;
 use mio::timer::{Timer, Timeout};
 use mio::udp::UdpSocket;
-use packet::{MAX_PACKET_SIZE, DataBytes, Packet};
+use packet::{MAX_PACKET_SIZE, DataBytes, Packet, PacketData};
 use rand;
 use rand::Rng;
 use std::collections::HashMap;
@@ -78,14 +78,14 @@ impl TftpServer {
 
     fn handle_server_packet(&mut self) -> io::Result<bool> {
         let mut buf = [0; MAX_PACKET_SIZE];
-        let src = match try!(self.socket.recv_from(&mut buf)) {
-            Some((_, src)) => src,
+        let (amt, src) = match try!(self.socket.recv_from(&mut buf)) {
+            Some((amt, src)) => (amt, src),
             None => {
                 println!("Getting None when receiving from server socket");
                 return Ok(false);
             }
         };
-        let packet = try!(Packet::read(buf));
+        let packet = try!(Packet::read(PacketData::new(buf, amt)));
         // Only allow RRQ and WRQ packets to be received
         match packet {
             Packet::RRQ { .. } |
@@ -118,12 +118,13 @@ impl TftpServer {
                 block_num = 1;
 
                 let mut buf = [0; 512];
-                try!(file.read(&mut buf));
+                let amount = try!(file.read(&mut buf));
 
                 // Reply with first data packet with a block number of 1
                 last_packet = Packet::DATA {
                     block_num: block_num,
                     data: DataBytes(buf),
+                    len: amount,
                 };
             }
             Packet::WRQ { filename, mode } => {
@@ -140,7 +141,7 @@ impl TftpServer {
         }
 
         let packet_bytes = try!(last_packet.clone().bytes());
-        try!(socket.send_to(&packet_bytes[..], &src));
+        try!(socket.send_to(packet_bytes.to_slice(), &src));
 
         self.connections.insert(token,
                                 ConnectionState {
@@ -164,7 +165,7 @@ impl TftpServer {
             println!("Timeout: resending last packet");
             let last_packet = conn.last_packet.clone();
             let last_packet_bytes = try!(last_packet.bytes());
-            try!(conn.conn.send_to(&last_packet_bytes[..], &conn.addr));
+            try!(conn.conn.send_to(last_packet_bytes.to_slice(), &conn.addr));
         }
 
         Ok(false)
@@ -173,14 +174,14 @@ impl TftpServer {
     fn handle_connection_packet(&mut self, token: Token) -> io::Result<bool> {
         if let Some(ref mut conn) = self.connections.get_mut(&token) {
             let mut buf = [0; MAX_PACKET_SIZE];
-            let src = match try!(conn.conn.recv_from(&mut buf)) {
-                Some((_, src)) => src,
+            let (amt, src) = match try!(conn.conn.recv_from(&mut buf)) {
+                Some((amt, src)) => (amt, src),
                 None => {
                     println!("Getting None when receiving from connection socket");
                     return Ok(false);
                 }
             };
-            let packet = try!(Packet::read(buf));
+            let packet = try!(Packet::read(PacketData::new(buf, amt)));
 
             match packet {
                 Packet::ACK(block_num) => {
@@ -192,17 +193,18 @@ impl TftpServer {
 
                     incr_block_num(&mut conn.block_num);
                     let mut buf = [0; 512];
-                    try!(conn.file.read(&mut buf));
+                    let amount = try!(conn.file.read(&mut buf));
 
                     // Send next data packet
                     conn.last_packet = Packet::DATA {
                         block_num: conn.block_num,
                         data: DataBytes(buf),
+                        len: amount,
                     };
                     let packet_bytes = try!(conn.last_packet.clone().bytes());
-                    try!(conn.conn.send_to(&packet_bytes[..], &conn.addr));
+                    try!(conn.conn.send_to(packet_bytes.to_slice(), &conn.addr));
                 }
-                Packet::DATA { block_num, data } => {
+                Packet::DATA { block_num, data, len } => {
                     println!("Received data with block number {}", block_num);
 
                     incr_block_num(&mut conn.block_num);
@@ -210,12 +212,12 @@ impl TftpServer {
                         // TODO(DarinM223): handle error
                         panic!("Invalid block number received");
                     }
-                    try!(conn.file.write(&data.0[..]));
+                    try!(conn.file.write(&data.0[0..len]));
 
                     // Send ACK packet for data
                     conn.last_packet = Packet::ACK(conn.block_num);
                     let packet_bytes = try!(conn.last_packet.clone().bytes());
-                    try!(conn.conn.send_to(&packet_bytes[..], &conn.addr));
+                    try!(conn.conn.send_to(packet_bytes.to_slice(), &conn.addr));
                 }
                 Packet::ERROR { .. } => {
                     // TODO(DarinM223): terminate connection

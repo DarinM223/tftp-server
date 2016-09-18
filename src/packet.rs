@@ -1,4 +1,5 @@
 use std::{fmt, io, mem, result, str};
+use std::marker::PhantomData;
 
 #[repr(u16)]
 #[derive(PartialEq, Clone, Debug)]
@@ -41,7 +42,41 @@ pub const MODES: [&'static str; 3] = ["netascii", "octet", "mail"];
 pub const MAX_PACKET_SIZE: usize = 1024;
 pub const MAX_DATA_SIZE: usize = 516;
 
-pub type PacketData = [u8; MAX_PACKET_SIZE];
+pub struct PacketData<'a> {
+    bytes: [u8; MAX_PACKET_SIZE],
+    len: usize,
+    phantom: PhantomData<&'a i32>,
+}
+
+impl<'a> PacketData<'a> {
+    pub fn new(bytes: [u8; MAX_PACKET_SIZE], len: usize) -> PacketData<'a> {
+        PacketData {
+            bytes: bytes,
+            len: len,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn to_slice(&'a self) -> &'a [u8] {
+        &self.bytes[0..self.len]
+    }
+}
+
+impl<'a> Clone for PacketData<'a> {
+    fn clone(&self) -> PacketData<'a> {
+        let mut bytes = [0; MAX_PACKET_SIZE];
+        for i in 0..MAX_PACKET_SIZE {
+            bytes[i] = self.bytes[i];
+        }
+
+        PacketData {
+            bytes: bytes,
+            len: self.len,
+            phantom: self.phantom,
+        }
+    }
+}
+
 pub type Result<T> = result::Result<T, PacketErr>;
 
 pub struct DataBytes(pub [u8; 512]);
@@ -121,6 +156,7 @@ pub enum Packet {
     DATA {
         block_num: u16,
         data: DataBytes,
+        len: usize,
     },
     ACK(u16),
     ERROR {
@@ -132,7 +168,7 @@ pub enum Packet {
 impl Packet {
     /// Creates and returns a packet parsed from its byte representation.
     pub fn read(bytes: PacketData) -> Result<Packet> {
-        let opcode = OpCode::from_u16(merge_bytes(bytes[0], bytes[1]));
+        let opcode = OpCode::from_u16(merge_bytes(bytes.bytes[0], bytes.bytes[1]));
         match opcode {
             OpCode::RRQ | OpCode::WRQ => read_rw_packet(opcode, bytes),
             OpCode::DATA => read_data_packet(bytes),
@@ -153,11 +189,11 @@ impl Packet {
     }
 
     /// Consumes the packet and returns the packet in byte representation.
-    pub fn bytes(self) -> Result<PacketData> {
+    pub fn bytes<'a>(self) -> Result<PacketData<'a>> {
         match self {
             Packet::RRQ { filename, mode } => rw_packet_bytes(OpCode::RRQ, filename, mode),
             Packet::WRQ { filename, mode } => rw_packet_bytes(OpCode::WRQ, filename, mode),
-            Packet::DATA { block_num, data } => data_packet_bytes(block_num, data.0),
+            Packet::DATA { block_num, data, len } => data_packet_bytes(block_num, data.0, len),
             Packet::ACK(block_num) => ack_packet_bytes(block_num),
             Packet::ERROR { code, msg } => error_packet_bytes(code, msg),
         }
@@ -177,14 +213,14 @@ fn merge_bytes(num1: u8, num2: u8) -> u16 {
 
 /// Reads bytes from the packet bytes starting from the given index
 /// until the zero byte and returns a string containing the bytes read.
-fn read_string(bytes: PacketData, start: usize) -> Result<(String, usize)> {
+fn read_string(bytes: &PacketData, start: usize) -> Result<(String, usize)> {
     let mut result_bytes = Vec::new();
     let mut counter = start;
-    while bytes[counter] != 0 {
-        result_bytes.push(bytes[counter]);
+    while bytes.bytes[counter] != 0 {
+        result_bytes.push(bytes.bytes[counter]);
 
         counter += 1;
-        if counter >= bytes.len() {
+        if counter >= bytes.len {
             return Err(PacketErr::StrOutOfBounds);
         }
     }
@@ -195,8 +231,8 @@ fn read_string(bytes: PacketData, start: usize) -> Result<(String, usize)> {
 }
 
 fn read_rw_packet(code: OpCode, bytes: PacketData) -> Result<Packet> {
-    let (filename, end_pos) = try!(read_string(bytes, 2));
-    let (mode, _) = try!(read_string(bytes, end_pos));
+    let (filename, end_pos) = try!(read_string(&bytes, 2));
+    let (mode, _) = try!(read_string(&bytes, end_pos));
 
     match code {
         OpCode::RRQ => {
@@ -216,27 +252,28 @@ fn read_rw_packet(code: OpCode, bytes: PacketData) -> Result<Packet> {
 }
 
 fn read_data_packet(bytes: PacketData) -> Result<Packet> {
-    let block_num = merge_bytes(bytes[2], bytes[3]);
+    let block_num = merge_bytes(bytes.bytes[2], bytes.bytes[3]);
     let mut data = [0; 512];
     // TODO(DarinM223): refactor to use iterators instead of indexing
     for i in 0..512 {
-        data[i] = bytes[i + 4];
+        data[i] = bytes.bytes[i + 4];
     }
 
     Ok(Packet::DATA {
         block_num: block_num,
         data: DataBytes(data),
+        len: bytes.len - 4,
     })
 }
 
 fn read_ack_packet(bytes: PacketData) -> Result<Packet> {
-    let block_num = merge_bytes(bytes[2], bytes[3]);
+    let block_num = merge_bytes(bytes.bytes[2], bytes.bytes[3]);
     Ok(Packet::ACK(block_num))
 }
 
 fn read_error_packet(bytes: PacketData) -> Result<Packet> {
-    let error_code = ErrorCode::from_u16(merge_bytes(bytes[2], bytes[3]));
-    let (msg, _) = try!(read_string(bytes, 4));
+    let error_code = ErrorCode::from_u16(merge_bytes(bytes.bytes[2], bytes.bytes[3]));
+    let (msg, _) = try!(read_string(&bytes, 4));
 
     Ok(Packet::ERROR {
         code: error_code,
@@ -244,7 +281,7 @@ fn read_error_packet(bytes: PacketData) -> Result<Packet> {
     })
 }
 
-fn rw_packet_bytes(packet: OpCode, filename: String, mode: String) -> Result<PacketData> {
+fn rw_packet_bytes<'a>(packet: OpCode, filename: String, mode: String) -> Result<PacketData<'a>> {
     if filename.len() + mode.len() > MAX_PACKET_SIZE {
         return Err(PacketErr::OverflowSize);
     }
@@ -266,11 +303,15 @@ fn rw_packet_bytes(packet: OpCode, filename: String, mode: String) -> Result<Pac
         bytes[index] = byte;
         index += 1;
     }
+    index += 1;
 
-    Ok(bytes)
+    Ok(PacketData::new(bytes, index))
 }
 
-fn data_packet_bytes(block_num: u16, data: [u8; 512]) -> Result<PacketData> {
+fn data_packet_bytes<'a>(block_num: u16,
+                         data: [u8; 512],
+                         data_len: usize)
+                         -> Result<PacketData<'a>> {
     let mut bytes = [0; MAX_PACKET_SIZE];
 
     let (b1, b2) = split_into_bytes(OpCode::DATA as u16);
@@ -282,15 +323,15 @@ fn data_packet_bytes(block_num: u16, data: [u8; 512]) -> Result<PacketData> {
     bytes[3] = b4;
 
     let mut index = 4;
-    for byte in data.into_iter() {
-        bytes[index] = *byte;
+    for i in 0..data_len {
+        bytes[index] = data[i];
         index += 1;
     }
 
-    Ok(bytes)
+    Ok(PacketData::new(bytes, index))
 }
 
-fn ack_packet_bytes(block_num: u16) -> Result<PacketData> {
+fn ack_packet_bytes<'a>(block_num: u16) -> Result<PacketData<'a>> {
     let mut bytes = [0; MAX_PACKET_SIZE];
 
     let (b1, b2) = split_into_bytes(OpCode::ACK as u16);
@@ -301,10 +342,10 @@ fn ack_packet_bytes(block_num: u16) -> Result<PacketData> {
     bytes[2] = b3;
     bytes[3] = b4;
 
-    Ok(bytes)
+    Ok(PacketData::new(bytes, 4))
 }
 
-fn error_packet_bytes(code: ErrorCode, msg: String) -> Result<PacketData> {
+fn error_packet_bytes<'a>(code: ErrorCode, msg: String) -> Result<PacketData<'a>> {
     if msg.len() + 5 > MAX_PACKET_SIZE {
         return Err(PacketErr::OverflowSize);
     }
@@ -324,8 +365,9 @@ fn error_packet_bytes(code: ErrorCode, msg: String) -> Result<PacketData> {
         bytes[index] = byte;
         index += 1;
     }
+    index += 1;
 
-    Ok(bytes)
+    Ok(PacketData::new(bytes, index))
 }
 
 #[test]
@@ -349,7 +391,7 @@ macro_rules! read_string {
                 bytes[i] = seed_bytes[i] as u8;
             }
 
-            let result = read_string(bytes, $start_pos);
+            let result = read_string(&PacketData::new(bytes, seed_bytes.len()), $start_pos);
             assert!(result.is_ok());
             let _ = result.map(|(string, end_pos)| {
                 assert_eq!(string, $string);

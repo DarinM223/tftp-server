@@ -6,7 +6,7 @@ use std::net::{SocketAddr, UdpSocket};
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
-use tftp_server::packet::{DataBytes, Packet, MAX_PACKET_SIZE};
+use tftp_server::packet::{DataBytes, Packet, PacketData, MAX_PACKET_SIZE};
 use tftp_server::server::{create_socket, incr_block_num, TftpServer};
 
 const TIMEOUT: u64 = 3;
@@ -37,11 +37,12 @@ pub fn test_tftp(server_addr: &SocketAddr, input_msgs: Vec<Packet>, output_msgs:
     let socket = create_socket(Duration::from_secs(TIMEOUT)).expect("Error creating client socket");
     for (input, output) in input_msgs.into_iter().zip(output_msgs.into_iter()) {
         let input_bytes = input.bytes().expect("Error creating input packet");
-        socket.send_to(&input_bytes[..], server_addr).expect("Error sending message");
+        socket.send_to(input_bytes.to_slice(), server_addr).expect("Error sending message");
 
         let mut reply_buf = [0; MAX_PACKET_SIZE];
-        socket.recv_from(&mut reply_buf).expect("Error receiving reply from socket");
-        let reply_packet = Packet::read(reply_buf).expect("Error creating output packet");
+        let (amt, _) = socket.recv_from(&mut reply_buf).expect("Error receiving reply from socket");
+        let reply_packet = Packet::read(PacketData::new(reply_buf, amt))
+            .expect("Error creating output packet");
         assert_eq!(reply_packet, output);
     }
 }
@@ -76,10 +77,11 @@ fn rrq_initial_data_test(server_addr: &SocketAddr) {
                              }];
     let mut file = fs::File::open("./files/hello.txt").expect("Error opening test file");
     let mut buf = [0; 512];
-    file.read(&mut buf).expect("Error reading from test file");
+    let amount = file.read(&mut buf).expect("Error reading from test file");
     let expected_packets = vec![Packet::DATA {
                                     block_num: 1,
                                     data: DataBytes(buf),
+                                    len: amount,
                                 }];
     test_tftp(server_addr, input_packets, expected_packets);
 }
@@ -91,33 +93,35 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) {
         mode: "octet".to_string(),
     };
     let init_packet_bytes = init_packet.bytes().expect("Error creating init packet");
-    socket.send_to(&init_packet_bytes[..], server_addr).expect("Error sending init packet");
+    socket.send_to(init_packet_bytes.to_slice(), server_addr).expect("Error sending init packet");
 
     {
         let mut file = fs::File::open("./files/hello.txt").expect("Error opening test file");
         let mut block_num = 0;
         loop {
             let mut reply_buf = [0; MAX_PACKET_SIZE];
-            let (_, src) = socket.recv_from(&mut reply_buf)
+            let (amt, src) = socket.recv_from(&mut reply_buf)
                 .expect("Error receiving reply from socket");
-            let reply_packet = Packet::read(reply_buf).expect("Error creating reply packet");
+            let reply_packet = Packet::read(PacketData::new(reply_buf, amt))
+                .expect("Error creating reply packet");
 
             assert_eq!(reply_packet, Packet::ACK(block_num));
             incr_block_num(&mut block_num);
 
             // Read and send data packet
             let mut buf = [0; 512];
-            match file.read(&mut buf) {
+            let amount = match file.read(&mut buf) {
                 Err(_) => break,
                 Ok(i) if i == 0 => break,
-                _ => {}
-            }
+                Ok(i) => i,
+            };
             let data_packet = Packet::DATA {
                 block_num: block_num,
                 data: DataBytes(buf),
+                len: amount,
             };
             let data_packet_bytes = data_packet.bytes().expect("Error creating data packet");
-            socket.send_to(&data_packet_bytes[..], &src);
+            socket.send_to(data_packet_bytes.to_slice(), &src);
         }
     }
 
