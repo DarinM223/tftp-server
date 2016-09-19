@@ -139,8 +139,7 @@ impl TftpServer {
             _ => unreachable!(),
         };
 
-        let packet_bytes = send_packet.clone().bytes()?;
-        socket.send_to(packet_bytes.to_slice(), &src)?;
+        socket.send_to(send_packet.clone().bytes()?.to_slice(), &src)?;
 
         self.connections.insert(token,
                                 ConnectionState {
@@ -165,9 +164,7 @@ impl TftpServer {
         };
         if let Some(ref mut conn) = self.connections.get_mut(&token) {
             println!("Timeout: resending last packet");
-            let last_packet = conn.last_packet.clone();
-            let last_packet_bytes = last_packet.bytes()?;
-            conn.conn.send_to(last_packet_bytes.to_slice(), &conn.addr)?;
+            conn.conn.send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
         }
 
         Ok(false)
@@ -339,8 +336,7 @@ fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> io::Result<b
         data: DataBytes(buf),
         len: amount,
     };
-    let packet_bytes = conn.last_packet.clone().bytes()?;
-    conn.conn.send_to(packet_bytes.to_slice(), &conn.addr)?;
+    conn.conn.send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
 
     Ok(false)
 }
@@ -361,8 +357,7 @@ fn handle_data_packet(block_num: u16,
 
     // Send ACK packet for data
     conn.last_packet = Packet::ACK(conn.block_num);
-    let packet_bytes = conn.last_packet.clone().bytes()?;
-    conn.conn.send_to(packet_bytes.to_slice(), &conn.addr)?;
+    conn.conn.send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
 
     Ok(len < 512)
 }

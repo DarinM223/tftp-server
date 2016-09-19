@@ -1,7 +1,12 @@
+#![feature(question_mark)]
+
 extern crate tftp_server;
 
+use std::error::Error;
 use std::fs;
-use std::io::Read;
+use std::fs::File;
+use std::io;
+use std::io::{Read, Write};
 use std::net::{SocketAddr, UdpSocket};
 use std::thread;
 use std::time::Duration;
@@ -32,79 +37,83 @@ pub fn get_socket(addr: &SocketAddr) -> UdpSocket {
 
 /// Tests the server by sending a bunch of input messages and asserting
 /// that the responses are the same as in the expected.
-pub fn test_tftp(server_addr: &SocketAddr, input_msgs: Vec<Packet>, output_msgs: Vec<Packet>) {
-    let socket = create_socket(Duration::from_secs(TIMEOUT)).expect("Error creating client socket");
+pub fn test_tftp(server_addr: &SocketAddr,
+                 input_msgs: Vec<Packet>,
+                 output_msgs: Vec<Packet>)
+                 -> io::Result<()> {
+    let socket = create_socket(Duration::from_secs(TIMEOUT))?;
     for (input, output) in input_msgs.into_iter().zip(output_msgs.into_iter()) {
-        let input_bytes = input.bytes().expect("Error creating input packet");
-        socket.send_to(input_bytes.to_slice(), server_addr).expect("Error sending message");
+        let input_bytes = input.bytes()?;
+        socket.send_to(input_bytes.to_slice(), server_addr)?;
 
         let mut reply_buf = [0; MAX_PACKET_SIZE];
-        let (amt, _) = socket.recv_from(&mut reply_buf).expect("Error receiving reply from socket");
-        let reply_packet = Packet::read(PacketData::new(reply_buf, amt))
-            .expect("Error creating output packet");
+        let (amt, _) = socket.recv_from(&mut reply_buf)?;
+        let reply_packet = Packet::read(PacketData::new(reply_buf, amt))?;
         assert_eq!(reply_packet, output);
     }
+    Ok(())
 }
 
-pub fn check_similar_files(file1: &mut fs::File, file2: &mut fs::File) {
+pub fn check_similar_files(file1: &mut File, file2: &mut File) -> io::Result<()> {
     let mut buf1 = String::new();
     let mut buf2 = String::new();
 
-    file1.read_to_string(&mut buf1).expect("Error reading file 1 to string");
-    file2.read_to_string(&mut buf2).expect("Error reading file 2 to string");
+    file1.read_to_string(&mut buf1)?;
+    file2.read_to_string(&mut buf2)?;
 
     assert_eq!(buf1, buf2);
+    Ok(())
 }
 
-fn wrq_initial_ack_test(server_addr: &SocketAddr) {
+fn wrq_initial_ack_test(server_addr: &SocketAddr) -> io::Result<()> {
     let input_packets = vec![Packet::WRQ {
                                  filename: "hello.txt".to_string(),
                                  mode: "octet".to_string(),
                              }];
     let expected_packets = vec![Packet::ACK(0)];
-    test_tftp(server_addr, input_packets, expected_packets);
+    test_tftp(server_addr, input_packets, expected_packets)?;
 
     // Test that hello.txt was created and remove hello.txt
     assert!(fs::metadata("./hello.txt").is_ok());
     assert!(fs::remove_file("./hello.txt").is_ok());
+    Ok(())
 }
 
-fn rrq_initial_data_test(server_addr: &SocketAddr) {
+fn rrq_initial_data_test(server_addr: &SocketAddr) -> io::Result<()> {
     let input_packets = vec![Packet::RRQ {
                                  filename: "./files/hello.txt".to_string(),
                                  mode: "octet".to_string(),
                              }];
-    let mut file = fs::File::open("./files/hello.txt").expect("Error opening test file");
+    let mut file = File::open("./files/hello.txt")?;
     let mut buf = [0; 512];
-    let amount = file.read(&mut buf).expect("Error reading from test file");
+    let amount = file.read(&mut buf)?;
     let expected_packets = vec![Packet::DATA {
                                     block_num: 1,
                                     data: DataBytes(buf),
                                     len: amount,
                                 }];
-    test_tftp(server_addr, input_packets, expected_packets);
+    test_tftp(server_addr, input_packets, expected_packets)?;
+    Ok(())
 }
 
-fn wrq_whole_file_test(server_addr: &SocketAddr) {
-    let socket = create_socket(Duration::from_secs(TIMEOUT)).expect("Error creating socket");
+fn wrq_whole_file_test(server_addr: &SocketAddr) -> io::Result<()> {
+    let socket = create_socket(Duration::from_secs(TIMEOUT))?;
     let init_packet = Packet::WRQ {
         filename: "hello.txt".to_string(),
         mode: "octet".to_string(),
     };
-    let init_packet_bytes = init_packet.bytes().expect("Error creating init packet");
-    socket.send_to(init_packet_bytes.to_slice(), server_addr).expect("Error sending init packet");
+    let init_packet_bytes = init_packet.bytes()?;
+    socket.send_to(init_packet_bytes.to_slice(), server_addr)?;
 
     {
-        let mut file = fs::File::open("./files/hello.txt").expect("Error opening test file");
+        let mut file = File::open("./files/hello.txt")?;
         let mut block_num = 0;
         let mut recv_src;
         loop {
             let mut reply_buf = [0; MAX_PACKET_SIZE];
-            let (amt, src) = socket.recv_from(&mut reply_buf)
-                .expect("Error receiving reply from socket");
+            let (amt, src) = socket.recv_from(&mut reply_buf)?;
             recv_src = src;
-            let reply_packet = Packet::read(PacketData::new(reply_buf, amt))
-                .expect("Error creating reply packet");
+            let reply_packet = Packet::read(PacketData::new(reply_buf, amt))?;
 
             assert_eq!(reply_packet, Packet::ACK(block_num));
             incr_block_num(&mut block_num);
@@ -121,29 +130,73 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) {
                 data: DataBytes(buf),
                 len: amount,
             };
-            let data_packet_bytes = data_packet.bytes().expect("Error creating data packet");
-            socket.send_to(data_packet_bytes.to_slice(), &src);
+            socket.send_to(data_packet.bytes()?.to_slice(), &src)?;
         }
 
         // Would cause server to have an error if this is received.
         // Used to test if connection is closed.
-        socket.send_to(&[1, 2, 3], &recv_src);
+        socket.send_to(&[1, 2, 3], &recv_src)?;
     }
 
     assert!(fs::metadata("./hello.txt").is_ok());
-    check_similar_files(&mut fs::File::open("./hello.txt").unwrap(),
-                        &mut fs::File::open("./files/hello.txt").unwrap());
+    let (mut f1, mut f2) = (File::open("./hello.txt")?, File::open("./files/hello.txt")?);
+    check_similar_files(&mut f1, &mut f2)?;
     assert!(fs::remove_file("./hello.txt").is_ok());
+    Ok(())
 }
 
-fn rrq_whole_file_test(server_addr: &SocketAddr) {
-    unimplemented!()
+fn rrq_whole_file_test(server_addr: &SocketAddr) -> io::Result<()> {
+    let socket = create_socket(Duration::from_secs(TIMEOUT))?;
+    let init_packet = Packet::RRQ {
+        filename: "./files/hello.txt".to_string(),
+        mode: "octet".to_string(),
+    };
+    let init_packet_bytes = init_packet.bytes()?;
+    socket.send_to(init_packet_bytes.to_slice(), server_addr)?;
+
+    {
+        let mut file = File::create("./hello.txt")?;
+        let mut client_block_num = 1;
+        let mut recv_src;
+        loop {
+            let mut reply_buf = [0; MAX_PACKET_SIZE];
+            let (amt, src) = socket.recv_from(&mut reply_buf)?;
+            recv_src = src;
+            let reply_packet = Packet::read(PacketData::new(reply_buf, amt))?;
+            if let Packet::DATA { block_num, data, len } = reply_packet {
+                assert_eq!(client_block_num, block_num);
+                file.write(&data.0[0..len])?;
+
+                let ack_packet = Packet::ACK(client_block_num);
+                socket.send_to(ack_packet.bytes()?.to_slice(), &src)?;
+
+                incr_block_num(&mut client_block_num);
+
+                if len < 512 {
+                    break;
+                }
+            } else {
+                panic!("Reply packet is not a data packet");
+            }
+        }
+
+        // Would cause server to have an error if this is received.
+        // Used to test if connection is closed.
+        socket.send_to(&[1, 2, 3], &recv_src)?;
+    }
+
+    assert!(fs::metadata("./hello.txt").is_ok());
+    let (mut f1, mut f2) = (File::open("./hello.txt")?, File::open("./files/hello.txt")?);
+    check_similar_files(&mut f1, &mut f2)?;
+    assert!(fs::remove_file("./hello.txt").is_ok());
+    Ok(())
 }
 
 fn main() {
     let server_addr = start_server();
     thread::sleep_ms(1000);
-    wrq_initial_ack_test(&server_addr);
-    rrq_initial_data_test(&server_addr);
-    wrq_whole_file_test(&server_addr);
+    wrq_initial_ack_test(&server_addr).unwrap();
+    rrq_initial_data_test(&server_addr).unwrap();
+    wrq_whole_file_test(&server_addr).unwrap();
+    rrq_whole_file_test(&server_addr).unwrap();
 }
