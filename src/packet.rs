@@ -1,5 +1,4 @@
 use std::{fmt, io, mem, result, str};
-use std::marker::PhantomData;
 
 #[repr(u16)]
 #[derive(PartialEq, Clone, Debug)]
@@ -42,28 +41,26 @@ pub const MODES: [&'static str; 3] = ["netascii", "octet", "mail"];
 pub const MAX_PACKET_SIZE: usize = 1024;
 pub const MAX_DATA_SIZE: usize = 516;
 
-pub struct PacketData<'a> {
+pub struct PacketData {
     bytes: [u8; MAX_PACKET_SIZE],
     len: usize,
-    phantom: PhantomData<&'a i32>,
 }
 
-impl<'a> PacketData<'a> {
-    pub fn new(bytes: [u8; MAX_PACKET_SIZE], len: usize) -> PacketData<'a> {
+impl PacketData {
+    pub fn new(bytes: [u8; MAX_PACKET_SIZE], len: usize) -> PacketData {
         PacketData {
             bytes: bytes,
             len: len,
-            phantom: PhantomData,
         }
     }
 
-    pub fn to_slice(&'a self) -> &'a [u8] {
+    pub fn to_slice<'a>(&'a self) -> &'a [u8] {
         &self.bytes[0..self.len]
     }
 }
 
-impl<'a> Clone for PacketData<'a> {
-    fn clone(&self) -> PacketData<'a> {
+impl Clone for PacketData {
+    fn clone(&self) -> PacketData {
         let mut bytes = [0; MAX_PACKET_SIZE];
         for i in 0..MAX_PACKET_SIZE {
             bytes[i] = self.bytes[i];
@@ -72,7 +69,6 @@ impl<'a> Clone for PacketData<'a> {
         PacketData {
             bytes: bytes,
             len: self.len,
-            phantom: self.phantom,
         }
     }
 }
@@ -189,7 +185,7 @@ impl Packet {
     }
 
     /// Consumes the packet and returns the packet in byte representation.
-    pub fn bytes<'a>(self) -> Result<PacketData<'a>> {
+    pub fn bytes(self) -> Result<PacketData> {
         match self {
             Packet::RRQ { filename, mode } => rw_packet_bytes(OpCode::RRQ, filename, mode),
             Packet::WRQ { filename, mode } => rw_packet_bytes(OpCode::WRQ, filename, mode),
@@ -281,7 +277,7 @@ fn read_error_packet(bytes: PacketData) -> Result<Packet> {
     })
 }
 
-fn rw_packet_bytes<'a>(packet: OpCode, filename: String, mode: String) -> Result<PacketData<'a>> {
+fn rw_packet_bytes(packet: OpCode, filename: String, mode: String) -> Result<PacketData> {
     if filename.len() + mode.len() > MAX_PACKET_SIZE {
         return Err(PacketErr::OverflowSize);
     }
@@ -308,10 +304,7 @@ fn rw_packet_bytes<'a>(packet: OpCode, filename: String, mode: String) -> Result
     Ok(PacketData::new(bytes, index))
 }
 
-fn data_packet_bytes<'a>(block_num: u16,
-                         data: [u8; 512],
-                         data_len: usize)
-                         -> Result<PacketData<'a>> {
+fn data_packet_bytes(block_num: u16, data: [u8; 512], data_len: usize) -> Result<PacketData> {
     let mut bytes = [0; MAX_PACKET_SIZE];
 
     let (b1, b2) = split_into_bytes(OpCode::DATA as u16);
@@ -331,7 +324,7 @@ fn data_packet_bytes<'a>(block_num: u16,
     Ok(PacketData::new(bytes, index))
 }
 
-fn ack_packet_bytes<'a>(block_num: u16) -> Result<PacketData<'a>> {
+fn ack_packet_bytes(block_num: u16) -> Result<PacketData> {
     let mut bytes = [0; MAX_PACKET_SIZE];
 
     let (b1, b2) = split_into_bytes(OpCode::ACK as u16);
@@ -345,7 +338,7 @@ fn ack_packet_bytes<'a>(block_num: u16) -> Result<PacketData<'a>> {
     Ok(PacketData::new(bytes, 4))
 }
 
-fn error_packet_bytes<'a>(code: ErrorCode, msg: String) -> Result<PacketData<'a>> {
+fn error_packet_bytes(code: ErrorCode, msg: String) -> Result<PacketData> {
     if msg.len() + 5 > MAX_PACKET_SIZE {
         return Err(PacketErr::OverflowSize);
     }

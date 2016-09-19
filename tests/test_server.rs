@@ -98,10 +98,12 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) {
     {
         let mut file = fs::File::open("./files/hello.txt").expect("Error opening test file");
         let mut block_num = 0;
+        let mut recv_src;
         loop {
             let mut reply_buf = [0; MAX_PACKET_SIZE];
             let (amt, src) = socket.recv_from(&mut reply_buf)
                 .expect("Error receiving reply from socket");
+            recv_src = src;
             let reply_packet = Packet::read(PacketData::new(reply_buf, amt))
                 .expect("Error creating reply packet");
 
@@ -123,6 +125,10 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) {
             let data_packet_bytes = data_packet.bytes().expect("Error creating data packet");
             socket.send_to(data_packet_bytes.to_slice(), &src);
         }
+
+        // Would cause server to have an error if this is received.
+        // Used to test if connection is closed.
+        socket.send_to(&[1, 2, 3], &recv_src);
     }
 
     assert!(fs::metadata("./hello.txt").is_ok());
