@@ -1,7 +1,7 @@
 use mio::*;
-use mio::timer::{Timer, Timeout};
+use mio::timer::{Timer, TimerError, Timeout};
 use mio::udp::UdpSocket;
-use packet::{MAX_PACKET_SIZE, DataBytes, Packet, PacketData};
+use packet::{MAX_PACKET_SIZE, DataBytes, Packet, PacketData, PacketErr};
 use rand;
 use rand::Rng;
 use std::collections::HashMap;
@@ -10,6 +10,7 @@ use std::io;
 use std::io::{Read, Write};
 use std::net;
 use std::net::SocketAddr;
+use std::result;
 use std::str::FromStr;
 use std::time::Duration;
 use std::u16;
@@ -17,6 +18,34 @@ use std::u16;
 const TIMEOUT_LENGTH: u64 = 5;
 const SERVER: Token = Token(0);
 const TIMER: Token = Token(1);
+
+#[derive(Debug)]
+pub enum TftpError {
+    PacketError(PacketErr),
+    IoError(io::Error),
+    TimerError(TimerError),
+    NoOpenSocket,
+}
+
+impl From<io::Error> for TftpError {
+    fn from(err: io::Error) -> TftpError {
+        TftpError::IoError(err)
+    }
+}
+
+impl From<PacketErr> for TftpError {
+    fn from(err: PacketErr) -> TftpError {
+        TftpError::PacketError(err)
+    }
+}
+
+impl From<TimerError> for TftpError {
+    fn from(err: TimerError) -> TftpError {
+        TftpError::TimerError(err)
+    }
+}
+
+pub type Result<T> = result::Result<T, TftpError>;
 
 /// The state contained within a connection.
 /// A connection is started when a server socket receives
@@ -58,7 +87,7 @@ pub struct TftpServer {
 
 impl TftpServer {
     /// Creates a new TFTP server from a random open UDP port.
-    pub fn new() -> io::Result<TftpServer> {
+    pub fn new() -> Result<TftpServer> {
         let poll = Poll::new()?;
         let socket = UdpSocket::from_socket(create_socket(Duration::from_secs(TIMEOUT_LENGTH))?)?;
         let timer = Timer::default();
@@ -75,7 +104,7 @@ impl TftpServer {
     }
 
     /// Creates a new TFTP server from a socket address.
-    pub fn new_from_addr(addr: &SocketAddr) -> io::Result<TftpServer> {
+    pub fn new_from_addr(addr: &SocketAddr) -> Result<TftpServer> {
         let poll = Poll::new()?;
         let socket = UdpSocket::bind(addr)?;
         let timer = Timer::default();
@@ -102,7 +131,7 @@ impl TftpServer {
     /// Handles a packet sent to the main server connection.
     /// It opens a new UDP connection in a random port and replies with either an ACK
     /// or a DATA packet depending on the whether it received an RRQ or a WRQ packet.
-    fn handle_server_packet(&mut self) -> io::Result<bool> {
+    fn handle_server_packet(&mut self) -> Result<bool> {
         let mut buf = [0; MAX_PACKET_SIZE];
         let (amt, src) = match self.socket.recv_from(&mut buf)? {
             Some((amt, src)) => (amt, src),
@@ -128,9 +157,7 @@ impl TftpServer {
 
         self.poll.register(&socket, token, Ready::all(), PollOpt::edge())?;
 
-        let timeout = self.timer
-            .set_timeout(Duration::from_secs(TIMEOUT_LENGTH), token)
-            .expect("Error setting timeout");
+        let timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT_LENGTH), token)?;
 
         // Handle the RRQ or WRQ packet
         let (file, block_num, send_packet) = match packet {
@@ -157,7 +184,7 @@ impl TftpServer {
     /// Handles the event when a timer times out.
     /// It gets the connection from the token and resends
     /// the last packet sent from the connection.
-    fn handle_timer(&mut self) -> io::Result<bool> {
+    fn handle_timer(&mut self) -> Result<bool> {
         let token = match self.timer.poll() {
             Some(token) => token,
             None => return Ok(false),
@@ -171,7 +198,7 @@ impl TftpServer {
     }
 
     /// Handles a packet sent to an open child connection.
-    fn handle_connection_packet(&mut self, token: Token) -> io::Result<bool> {
+    fn handle_connection_packet(&mut self, token: Token) -> Result<bool> {
         if let Some(mut conn) = self.connections.remove(&token) {
             let mut buf = [0; MAX_PACKET_SIZE];
             let amt = match conn.conn.recv_from(&mut buf)? {
@@ -203,9 +230,7 @@ impl TftpServer {
                 self.poll.deregister(&conn.conn)?;
             } else {
                 // Reset timeout
-                conn.timeout = self.timer
-                    .set_timeout(Duration::from_secs(TIMEOUT_LENGTH), token)
-                    .expect("Error setting timeout");
+                conn.timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT_LENGTH), token)?;
 
                 // Reinsert the connection if connection is not to be closed
                 self.connections.insert(token, conn);
@@ -216,7 +241,7 @@ impl TftpServer {
     }
 
     /// Runs the server's event loop.
-    pub fn run(&mut self) -> io::Result<()> {
+    pub fn run(&mut self) -> Result<()> {
         let mut events = Events::with_capacity(1024);
         'main_loop: loop {
             self.poll.poll(&mut events, None)?;
@@ -240,15 +265,15 @@ impl TftpServer {
     }
 
     /// Returns the socket address of the server socket.
-    pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.socket.local_addr()
+    pub fn local_addr(&self) -> Result<SocketAddr> {
+        Ok(self.socket.local_addr()?)
     }
 }
 
 /// Creates a std::net::UdpSocket on a random open UDP port.
 /// The range of valid ports is from 0 to 65535 and if the function
 /// cannot find a open port within 100 different random ports it returns an error.
-pub fn create_socket(timeout: Duration) -> io::Result<net::UdpSocket> {
+pub fn create_socket(timeout: Duration) -> Result<net::UdpSocket> {
     let mut num_failures = 0;
     let mut past_ports = HashMap::new();
     loop {
@@ -270,8 +295,7 @@ pub fn create_socket(timeout: Duration) -> io::Result<net::UdpSocket> {
                 past_ports.insert(port, true);
                 num_failures += 1;
                 if num_failures > 100 {
-                    return Err(io::Error::new(io::ErrorKind::NotFound,
-                                              "Cannot find available port"));
+                    return Err(TftpError::NoOpenSocket);
                 }
             }
         }
@@ -287,7 +311,7 @@ pub fn incr_block_num(block_num: &mut u16) {
     }
 }
 
-fn handle_rrq_packet(filename: String, mode: String) -> io::Result<(File, u16, Packet)> {
+fn handle_rrq_packet(filename: String, mode: String) -> Result<(File, u16, Packet)> {
     println!("Received RRQ packet with filename {} and mode {}",
              filename,
              mode);
@@ -307,7 +331,7 @@ fn handle_rrq_packet(filename: String, mode: String) -> io::Result<(File, u16, P
     Ok((file, block_num, last_packet))
 }
 
-fn handle_wrq_packet(filename: String, mode: String) -> io::Result<(File, u16, Packet)> {
+fn handle_wrq_packet(filename: String, mode: String) -> Result<(File, u16, Packet)> {
     println!("Received WRQ packet with filename {} and mode {}",
              filename,
              mode);
@@ -320,7 +344,7 @@ fn handle_wrq_packet(filename: String, mode: String) -> io::Result<(File, u16, P
     Ok((file, block_num, last_packet))
 }
 
-fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> io::Result<bool> {
+fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> Result<bool> {
     println!("Received ACK with block number {}", block_num);
     if block_num != conn.block_num {
         return Ok(true);
@@ -345,7 +369,7 @@ fn handle_data_packet(block_num: u16,
                       data: DataBytes,
                       len: usize,
                       conn: &mut ConnectionState)
-                      -> io::Result<bool> {
+                      -> Result<bool> {
     println!("Received data with block number {}", block_num);
 
     incr_block_num(&mut conn.block_num);

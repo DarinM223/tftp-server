@@ -2,37 +2,29 @@
 
 extern crate tftp_server;
 
-use std::error::Error;
 use std::fs;
 use std::fs::File;
-use std::io;
 use std::io::{Read, Write};
-use std::net::{SocketAddr, UdpSocket};
+use std::net::SocketAddr;
 use std::thread;
 use std::time::Duration;
 use tftp_server::packet::{DataBytes, Packet, PacketData, MAX_PACKET_SIZE};
-use tftp_server::server::{create_socket, incr_block_num, TftpServer};
+use tftp_server::server::{create_socket, incr_block_num, Result, TftpServer};
 
 const TIMEOUT: u64 = 3;
 
 /// Starts the server in a new thread.
-pub fn start_server() -> SocketAddr {
-    let mut server = TftpServer::new().expect("Error creating test server");
-    let addr = server.local_addr().expect("Error getting address from server").clone();
+pub fn start_server() -> Result<SocketAddr> {
+    let mut server = TftpServer::new()?;
+    let addr = server.local_addr()?;
     thread::spawn(move || {
         if let Err(e) = server.run() {
             println!("Error with server: {:?}", e);
         }
         ()
     });
-    addr
-}
 
-pub fn get_socket(addr: &SocketAddr) -> UdpSocket {
-    let socket = UdpSocket::bind(addr).expect("Error creating client socket");
-    socket.set_write_timeout(Some(Duration::from_secs(5)));
-    socket.set_read_timeout(Some(Duration::from_secs(3)));
-    socket
+    Ok(addr)
 }
 
 /// Tests the server by sending a bunch of input messages and asserting
@@ -40,7 +32,7 @@ pub fn get_socket(addr: &SocketAddr) -> UdpSocket {
 pub fn test_tftp(server_addr: &SocketAddr,
                  input_msgs: Vec<Packet>,
                  output_msgs: Vec<Packet>)
-                 -> io::Result<()> {
+                 -> Result<()> {
     let socket = create_socket(Duration::from_secs(TIMEOUT))?;
     for (input, output) in input_msgs.into_iter().zip(output_msgs.into_iter()) {
         let input_bytes = input.bytes()?;
@@ -54,7 +46,7 @@ pub fn test_tftp(server_addr: &SocketAddr,
     Ok(())
 }
 
-pub fn check_similar_files(file1: &mut File, file2: &mut File) -> io::Result<()> {
+pub fn check_similar_files(file1: &mut File, file2: &mut File) -> Result<()> {
     let mut buf1 = String::new();
     let mut buf2 = String::new();
 
@@ -65,7 +57,7 @@ pub fn check_similar_files(file1: &mut File, file2: &mut File) -> io::Result<()>
     Ok(())
 }
 
-fn wrq_initial_ack_test(server_addr: &SocketAddr) -> io::Result<()> {
+fn wrq_initial_ack_test(server_addr: &SocketAddr) -> Result<()> {
     let input_packets = vec![Packet::WRQ {
                                  filename: "hello.txt".to_string(),
                                  mode: "octet".to_string(),
@@ -79,7 +71,7 @@ fn wrq_initial_ack_test(server_addr: &SocketAddr) -> io::Result<()> {
     Ok(())
 }
 
-fn rrq_initial_data_test(server_addr: &SocketAddr) -> io::Result<()> {
+fn rrq_initial_data_test(server_addr: &SocketAddr) -> Result<()> {
     let input_packets = vec![Packet::RRQ {
                                  filename: "./files/hello.txt".to_string(),
                                  mode: "octet".to_string(),
@@ -96,7 +88,7 @@ fn rrq_initial_data_test(server_addr: &SocketAddr) -> io::Result<()> {
     Ok(())
 }
 
-fn wrq_whole_file_test(server_addr: &SocketAddr) -> io::Result<()> {
+fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
     let socket = create_socket(Duration::from_secs(TIMEOUT))?;
     let init_packet = Packet::WRQ {
         filename: "hello.txt".to_string(),
@@ -145,7 +137,7 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> io::Result<()> {
     Ok(())
 }
 
-fn rrq_whole_file_test(server_addr: &SocketAddr) -> io::Result<()> {
+fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
     let socket = create_socket(Duration::from_secs(TIMEOUT))?;
     let init_packet = Packet::RRQ {
         filename: "./files/hello.txt".to_string(),
@@ -193,8 +185,8 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> io::Result<()> {
 }
 
 fn main() {
-    let server_addr = start_server();
-    thread::sleep_ms(1000);
+    let server_addr = start_server().unwrap();
+    thread::sleep(Duration::from_millis(1000));
     wrq_initial_ack_test(&server_addr).unwrap();
     rrq_initial_data_test(&server_addr).unwrap();
     wrq_whole_file_test(&server_addr).unwrap();

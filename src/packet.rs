@@ -1,4 +1,22 @@
-use std::{fmt, io, mem, result, str};
+use std::{fmt, mem, result, str};
+
+#[derive(Debug)]
+pub enum PacketErr {
+    OverflowSize,
+    InvalidOpCode,
+    StrOutOfBounds,
+    OpCodeOutOfBounds,
+    ErrCodeOutOfBounds,
+    Utf8Error(str::Utf8Error),
+}
+
+impl From<str::Utf8Error> for PacketErr {
+    fn from(err: str::Utf8Error) -> PacketErr {
+        PacketErr::Utf8Error(err)
+    }
+}
+
+pub type Result<T> = result::Result<T, PacketErr>;
 
 #[repr(u16)]
 #[derive(PartialEq, Clone, Debug)]
@@ -11,9 +29,12 @@ pub enum OpCode {
 }
 
 impl OpCode {
-    pub fn from_u16(i: u16) -> OpCode {
-        assert!(i >= OpCode::RRQ as u16 && i <= OpCode::ERROR as u16);
-        unsafe { mem::transmute(i) }
+    pub fn from_u16(i: u16) -> Result<OpCode> {
+        if i >= OpCode::RRQ as u16 && i <= OpCode::ERROR as u16 {
+            Ok(unsafe { mem::transmute(i) })
+        } else {
+            Err(PacketErr::OpCodeOutOfBounds)
+        }
     }
 }
 
@@ -31,9 +52,12 @@ pub enum ErrorCode {
 }
 
 impl ErrorCode {
-    pub fn from_u16(i: u16) -> ErrorCode {
-        assert!(i >= ErrorCode::NotDefined as u16 && i <= ErrorCode::NoUser as u16);
-        unsafe { mem::transmute(i) }
+    pub fn from_u16(i: u16) -> Result<ErrorCode> {
+        if i >= ErrorCode::NotDefined as u16 && i <= ErrorCode::NoUser as u16 {
+            Ok(unsafe { mem::transmute(i) })
+        } else {
+            Err(PacketErr::ErrCodeOutOfBounds)
+        }
     }
 }
 
@@ -73,8 +97,6 @@ impl Clone for PacketData {
     }
 }
 
-pub type Result<T> = result::Result<T, PacketErr>;
-
 pub struct DataBytes(pub [u8; 512]);
 
 impl PartialEq for DataBytes {
@@ -106,39 +128,6 @@ impl fmt::Debug for DataBytes {
     }
 }
 
-#[derive(Debug)]
-pub enum PacketErr {
-    OverflowSize,
-    InvalidOpCode,
-    StrOutOfBounds,
-    Utf8Error(usize),
-}
-
-impl PacketErr {
-    pub fn to_string(&self) -> String {
-        match *self {
-            PacketErr::OverflowSize => "Packet size has overflowed".to_string(),
-            PacketErr::InvalidOpCode => "Packet opcode is invalid".to_string(),
-            PacketErr::StrOutOfBounds => {
-                "A string in the packet is not zero byte terminated".to_string()
-            }
-            PacketErr::Utf8Error(up_to) => format!("UTF8 string only valid up to {}", up_to),
-        }
-    }
-}
-
-impl From<PacketErr> for io::Error {
-    fn from(err: PacketErr) -> io::Error {
-        io::Error::new(io::ErrorKind::Other, err.to_string())
-    }
-}
-
-impl From<str::Utf8Error> for PacketErr {
-    fn from(err: str::Utf8Error) -> PacketErr {
-        PacketErr::Utf8Error(err.valid_up_to())
-    }
-}
-
 #[derive(PartialEq, Clone, Debug)]
 pub enum Packet {
     RRQ {
@@ -164,7 +153,7 @@ pub enum Packet {
 impl Packet {
     /// Creates and returns a packet parsed from its byte representation.
     pub fn read(bytes: PacketData) -> Result<Packet> {
-        let opcode = OpCode::from_u16(merge_bytes(bytes.bytes[0], bytes.bytes[1]));
+        let opcode = OpCode::from_u16(merge_bytes(bytes.bytes[0], bytes.bytes[1]))?;
         match opcode {
             OpCode::RRQ | OpCode::WRQ => read_rw_packet(opcode, bytes),
             OpCode::DATA => read_data_packet(bytes),
@@ -268,7 +257,7 @@ fn read_ack_packet(bytes: PacketData) -> Result<Packet> {
 }
 
 fn read_error_packet(bytes: PacketData) -> Result<Packet> {
-    let error_code = ErrorCode::from_u16(merge_bytes(bytes.bytes[2], bytes.bytes[3]));
+    let error_code = ErrorCode::from_u16(merge_bytes(bytes.bytes[2], bytes.bytes[3]))?;
     let (msg, _) = read_string(&bytes, 4)?;
 
     Ok(Packet::ERROR {
