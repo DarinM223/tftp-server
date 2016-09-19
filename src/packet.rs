@@ -222,13 +222,13 @@ fn read_string(bytes: &PacketData, start: usize) -> Result<(String, usize)> {
     }
     counter += 1;
 
-    let result_str = try!(str::from_utf8(result_bytes.as_slice())).to_string();
+    let result_str = str::from_utf8(result_bytes.as_slice())?.to_string();
     Ok((result_str, counter))
 }
 
 fn read_rw_packet(code: OpCode, bytes: PacketData) -> Result<Packet> {
-    let (filename, end_pos) = try!(read_string(&bytes, 2));
-    let (mode, _) = try!(read_string(&bytes, end_pos));
+    let (filename, end_pos) = read_string(&bytes, 2)?;
+    let (mode, _) = read_string(&bytes, end_pos)?;
 
     match code {
         OpCode::RRQ => {
@@ -269,7 +269,7 @@ fn read_ack_packet(bytes: PacketData) -> Result<Packet> {
 
 fn read_error_packet(bytes: PacketData) -> Result<Packet> {
     let error_code = ErrorCode::from_u16(merge_bytes(bytes.bytes[2], bytes.bytes[3]));
-    let (msg, _) = try!(read_string(&bytes, 4));
+    let (msg, _) = read_string(&bytes, 4)?;
 
     Ok(Packet::ERROR {
         code: error_code,

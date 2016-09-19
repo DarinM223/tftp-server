@@ -3,7 +3,6 @@ extern crate tftp_server;
 use std::fs;
 use std::io::Read;
 use std::net::{SocketAddr, UdpSocket};
-use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
 use tftp_server::packet::{DataBytes, Packet, PacketData, MAX_PACKET_SIZE};

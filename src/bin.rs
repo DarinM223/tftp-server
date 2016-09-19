@@ -1,3 +1,5 @@
+#![feature(question_mark)]
+
 extern crate tftp_server;
 
 use tftp_server::server::TftpServer;

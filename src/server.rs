@@ -59,12 +59,11 @@ pub struct TftpServer {
 impl TftpServer {
     /// Creates a new TFTP server from a random open UDP port.
     pub fn new() -> io::Result<TftpServer> {
-        let poll = try!(Poll::new());
-        let socket =
-            try!(UdpSocket::from_socket(try!(create_socket(Duration::from_secs(TIMEOUT_LENGTH)))));
+        let poll = Poll::new()?;
+        let socket = UdpSocket::from_socket(create_socket(Duration::from_secs(TIMEOUT_LENGTH))?)?;
         let timer = Timer::default();
-        try!(poll.register(&socket, SERVER, Ready::all(), PollOpt::edge()));
-        try!(poll.register(&timer, TIMER, Ready::readable(), PollOpt::edge()));
+        poll.register(&socket, SERVER, Ready::all(), PollOpt::edge())?;
+        poll.register(&timer, TIMER, Ready::readable(), PollOpt::edge())?;
 
         Ok(TftpServer {
             new_token: 2,
@@ -77,11 +76,11 @@ impl TftpServer {
 
     /// Creates a new TFTP server from a socket address.
     pub fn new_from_addr(addr: &SocketAddr) -> io::Result<TftpServer> {
-        let poll = try!(Poll::new());
-        let socket = try!(UdpSocket::bind(addr));
+        let poll = Poll::new()?;
+        let socket = UdpSocket::bind(addr)?;
         let timer = Timer::default();
-        try!(poll.register(&socket, SERVER, Ready::all(), PollOpt::edge()));
-        try!(poll.register(&timer, TIMER, Ready::readable(), PollOpt::edge()));
+        poll.register(&socket, SERVER, Ready::all(), PollOpt::edge())?;
+        poll.register(&timer, TIMER, Ready::readable(), PollOpt::edge())?;
 
         Ok(TftpServer {
             new_token: 2,
@@ -105,14 +104,14 @@ impl TftpServer {
     /// or a DATA packet depending on the whether it received an RRQ or a WRQ packet.
     fn handle_server_packet(&mut self) -> io::Result<bool> {
         let mut buf = [0; MAX_PACKET_SIZE];
-        let (amt, src) = match try!(self.socket.recv_from(&mut buf)) {
+        let (amt, src) = match self.socket.recv_from(&mut buf)? {
             Some((amt, src)) => (amt, src),
             None => {
                 println!("Getting None when receiving from server socket");
                 return Ok(false);
             }
         };
-        let packet = try!(Packet::read(PacketData::new(buf, amt)));
+        let packet = Packet::read(PacketData::new(buf, amt))?;
 
         // Only allow RRQ and WRQ packets to be received
         match packet {
@@ -124,52 +123,24 @@ impl TftpServer {
             }
         }
 
-        let socket =
-            try!(UdpSocket::from_socket(try!(create_socket(Duration::from_secs(TIMEOUT_LENGTH)))));
+        let socket = UdpSocket::from_socket(create_socket(Duration::from_secs(TIMEOUT_LENGTH))?)?;
         let token = self.generate_token();
 
-        try!(self.poll.register(&socket, token, Ready::all(), PollOpt::edge()));
+        self.poll.register(&socket, token, Ready::all(), PollOpt::edge())?;
 
-        let mut file: File;
-        let block_num: u16;
         let timeout = self.timer
             .set_timeout(Duration::from_secs(TIMEOUT_LENGTH), token)
             .expect("Error setting timeout");
-        let last_packet: Packet;
+
         // Handle the RRQ or WRQ packet
-        match packet {
-            Packet::RRQ { filename, mode } => {
-                println!("Received RRQ packet with filename {} and mode {}",
-                         filename,
-                         mode);
-                file = try!(File::open(filename));
-                block_num = 1;
-
-                let mut buf = [0; 512];
-                let amount = try!(file.read(&mut buf));
-
-                // Reply with first data packet with a block number of 1
-                last_packet = Packet::DATA {
-                    block_num: block_num,
-                    data: DataBytes(buf),
-                    len: amount,
-                };
-            }
-            Packet::WRQ { filename, mode } => {
-                println!("Received WRQ packet with filename {} and mode {}",
-                         filename,
-                         mode);
-                file = try!(File::create(filename));
-                block_num = 0;
-
-                // Reply with ACK with a block number of 0
-                last_packet = Packet::ACK(block_num);
-            }
+        let (file, block_num, send_packet) = match packet {
+            Packet::RRQ { filename, mode } => handle_rrq_packet(filename, mode)?,
+            Packet::WRQ { filename, mode } => handle_wrq_packet(filename, mode)?,
             _ => unreachable!(),
-        }
+        };
 
-        let packet_bytes = try!(last_packet.clone().bytes());
-        try!(socket.send_to(packet_bytes.to_slice(), &src));
+        let packet_bytes = send_packet.clone().bytes()?;
+        socket.send_to(packet_bytes.to_slice(), &src)?;
 
         self.connections.insert(token,
                                 ConnectionState {
@@ -177,7 +148,7 @@ impl TftpServer {
                                     file: file,
                                     timeout: timeout,
                                     block_num: block_num,
-                                    last_packet: last_packet,
+                                    last_packet: send_packet,
                                     addr: src,
                                 });
 
@@ -195,8 +166,8 @@ impl TftpServer {
         if let Some(ref mut conn) = self.connections.get_mut(&token) {
             println!("Timeout: resending last packet");
             let last_packet = conn.last_packet.clone();
-            let last_packet_bytes = try!(last_packet.bytes());
-            try!(conn.conn.send_to(last_packet_bytes.to_slice(), &conn.addr));
+            let last_packet_bytes = last_packet.bytes()?;
+            conn.conn.send_to(last_packet_bytes.to_slice(), &conn.addr)?;
         }
 
         Ok(false)
@@ -204,62 +175,35 @@ impl TftpServer {
 
     /// Handles a packet sent to an open child connection.
     fn handle_connection_packet(&mut self, token: Token) -> io::Result<bool> {
-        let mut close_connection = true;
         if let Some(mut conn) = self.connections.remove(&token) {
             let mut buf = [0; MAX_PACKET_SIZE];
-            let amt = match try!(conn.conn.recv_from(&mut buf)) {
+            let amt = match conn.conn.recv_from(&mut buf)? {
                 Some((amt, _)) => amt,
                 None => {
                     println!("Getting None when receiving from connection socket");
                     return Ok(false);
                 }
             };
-            let packet = try!(Packet::read(PacketData::new(buf, amt)));
+            let packet = Packet::read(PacketData::new(buf, amt))?;
 
-            match packet {
-                Packet::ACK(block_num) => {
-                    println!("Received ACK with block number {}", block_num);
-                    if block_num == conn.block_num {
-                        incr_block_num(&mut conn.block_num);
-                        let mut buf = [0; 512];
-                        let amount = try!(conn.file.read(&mut buf));
-
-                        // Send next data packet
-                        conn.last_packet = Packet::DATA {
-                            block_num: conn.block_num,
-                            data: DataBytes(buf),
-                            len: amount,
-                        };
-                        let packet_bytes = try!(conn.last_packet.clone().bytes());
-                        try!(conn.conn.send_to(packet_bytes.to_slice(), &conn.addr));
-                        close_connection = false;
-                    }
-                }
+            let close_connection = match packet {
+                Packet::ACK(block_num) => handle_ack_packet(block_num, &mut conn)?,
                 Packet::DATA { block_num, data, len } => {
-                    println!("Received data with block number {}", block_num);
-
-                    incr_block_num(&mut conn.block_num);
-                    if block_num == conn.block_num {
-                        try!(conn.file.write(&data.0[0..len]));
-
-                        // Send ACK packet for data
-                        conn.last_packet = Packet::ACK(conn.block_num);
-                        let packet_bytes = try!(conn.last_packet.clone().bytes());
-                        try!(conn.conn.send_to(packet_bytes.to_slice(), &conn.addr));
-                        close_connection = len < 512;
-                    }
+                    handle_data_packet(block_num, data, len, &mut conn)?
                 }
                 Packet::ERROR { .. } => {
                     println!("Error message received");
+                    true
                 }
                 _ => {
                     println!("Received invalid packet from connection");
+                    true
                 }
-            }
+            };
 
             assert!(self.timer.cancel_timeout(&conn.timeout).is_some());
             if close_connection {
-                try!(self.poll.deregister(&conn.conn));
+                self.poll.deregister(&conn.conn)?;
             } else {
                 // Reset timeout
                 conn.timeout = self.timer
@@ -278,14 +222,14 @@ impl TftpServer {
     pub fn run(&mut self) -> io::Result<()> {
         let mut events = Events::with_capacity(1024);
         'main_loop: loop {
-            try!(self.poll.poll(&mut events, None));
+            self.poll.poll(&mut events, None)?;
 
             for event in events.iter() {
                 let finished = match event.token() {
-                    SERVER => try!(self.handle_server_packet()),
-                    TIMER => try!(self.handle_timer()),
+                    SERVER => self.handle_server_packet()?,
+                    TIMER => self.handle_timer()?,
                     token if self.connections.get(&token).is_some() => {
-                        try!(self.handle_connection_packet(token))
+                        self.handle_connection_packet(token)?
                     }
                     _ => unreachable!(),
                 };
@@ -311,7 +255,7 @@ pub fn create_socket(timeout: Duration) -> io::Result<net::UdpSocket> {
     let mut num_failures = 0;
     let mut past_ports = HashMap::new();
     loop {
-        let mut port = rand::thread_rng().gen_range(0, 65535);
+        let port = rand::thread_rng().gen_range(0, 65535);
         // Ignore ports that already failed.
         if past_ports.get(&port).is_some() {
             continue;
@@ -321,8 +265,8 @@ pub fn create_socket(timeout: Duration) -> io::Result<net::UdpSocket> {
         let socket_addr = SocketAddr::from_str(addr.as_str()).expect("Error parsing address");
         match net::UdpSocket::bind(&socket_addr) {
             Ok(socket) => {
-                try!(socket.set_read_timeout(Some(timeout)));
-                try!(socket.set_write_timeout(Some(timeout)));
+                socket.set_read_timeout(Some(timeout))?;
+                socket.set_write_timeout(Some(timeout))?;
                 return Ok(socket);
             }
             Err(_) => {
@@ -344,4 +288,81 @@ pub fn incr_block_num(block_num: &mut u16) {
     } else {
         *block_num += 1;
     }
+}
+
+fn handle_rrq_packet(filename: String, mode: String) -> io::Result<(File, u16, Packet)> {
+    println!("Received RRQ packet with filename {} and mode {}",
+             filename,
+             mode);
+    let mut file = File::open(filename)?;
+    let block_num = 1;
+
+    let mut buf = [0; 512];
+    let amount = file.read(&mut buf)?;
+
+    // Reply with first data packet with a block number of 1
+    let last_packet = Packet::DATA {
+        block_num: block_num,
+        data: DataBytes(buf),
+        len: amount,
+    };
+
+    Ok((file, block_num, last_packet))
+}
+
+fn handle_wrq_packet(filename: String, mode: String) -> io::Result<(File, u16, Packet)> {
+    println!("Received WRQ packet with filename {} and mode {}",
+             filename,
+             mode);
+    let file = File::create(filename)?;
+    let block_num = 0;
+
+    // Reply with ACK with a block number of 0
+    let last_packet = Packet::ACK(block_num);
+
+    Ok((file, block_num, last_packet))
+}
+
+fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> io::Result<bool> {
+    println!("Received ACK with block number {}", block_num);
+    if block_num != conn.block_num {
+        return Ok(true);
+    }
+
+    incr_block_num(&mut conn.block_num);
+    let mut buf = [0; 512];
+    let amount = conn.file.read(&mut buf)?;
+
+    // Send next data packet
+    conn.last_packet = Packet::DATA {
+        block_num: conn.block_num,
+        data: DataBytes(buf),
+        len: amount,
+    };
+    let packet_bytes = conn.last_packet.clone().bytes()?;
+    conn.conn.send_to(packet_bytes.to_slice(), &conn.addr)?;
+
+    Ok(false)
+}
+
+fn handle_data_packet(block_num: u16,
+                      data: DataBytes,
+                      len: usize,
+                      conn: &mut ConnectionState)
+                      -> io::Result<bool> {
+    println!("Received data with block number {}", block_num);
+
+    incr_block_num(&mut conn.block_num);
+    if block_num != conn.block_num {
+        return Ok(true);
+    }
+
+    conn.file.write(&data.0[0..len])?;
+
+    // Send ACK packet for data
+    conn.last_packet = Packet::ACK(conn.block_num);
+    let packet_bytes = conn.last_packet.clone().bytes()?;
+    conn.conn.send_to(packet_bytes.to_slice(), &conn.addr)?;
+
+    Ok(len < 512)
 }
