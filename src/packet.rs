@@ -1,4 +1,6 @@
 use std::{fmt, mem, result, str};
+use std::io::Cursor;
+use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 
 #[derive(Debug)]
 pub enum PacketErr {
@@ -187,13 +189,16 @@ impl Packet {
 
 /// Splits a two byte unsigned integer into two one byte unsigned integers.
 fn split_into_bytes(num: u16) -> (u8, u8) {
-    let (b0, b1) = (num & 0xFF, (num >> 8) & (0xFF));
-    (b0 as u8, b1 as u8)
+    let mut wtr = vec![];
+    wtr.write_u16::<BigEndian>(num).unwrap();
+
+    (wtr[0], wtr[1])
 }
 
 /// Merges two 1 byte unsigned integers into a two byte unsigned integer.
 fn merge_bytes(num1: u8, num2: u8) -> u16 {
-    (num1 as u16) + ((num2 as u16) << 8)
+    let mut rdr = Cursor::new(vec![num1, num2]);
+    rdr.read_u16::<BigEndian>().unwrap()
 }
 
 /// Reads bytes from the packet bytes starting from the given index
@@ -350,17 +355,6 @@ fn error_packet_bytes(code: ErrorCode, msg: String) -> Result<PacketData> {
     index += 1;
 
     Ok(PacketData::new(bytes, index))
-}
-
-#[test]
-fn test_split_merge_bytes() {
-    let tests = [0, 1234, 9876];
-    for test in tests.iter() {
-        let (b1, b2) = split_into_bytes(*test);
-        let merged = merge_bytes(b1, b2);
-
-        assert_eq!(*test, merged);
-    }
 }
 
 macro_rules! read_string {
