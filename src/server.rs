@@ -152,14 +152,14 @@ impl TftpServer {
             }
         }
 
+        // Create new connection.
         let socket = UdpSocket::from_socket(create_socket(Duration::from_secs(TIMEOUT_LENGTH))?)?;
         let token = self.generate_token();
+        let timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT_LENGTH), token)?;
 
         self.poll.register(&socket, token, Ready::all(), PollOpt::edge())?;
 
-        let timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT_LENGTH), token)?;
-
-        // Handle the RRQ or WRQ packet
+        // Handle the RRQ or WRQ packet.
         let (file, block_num, send_packet) = match packet {
             Packet::RRQ { filename, mode } => handle_rrq_packet(filename, mode)?,
             Packet::WRQ { filename, mode } => handle_wrq_packet(filename, mode)?,
@@ -205,6 +205,9 @@ impl TftpServer {
                 Some((amt, _)) => amt,
                 None => {
                     println!("Getting None when receiving from connection socket");
+
+                    // Reinsert the connection if connection is not to be closed
+                    self.connections.insert(token, conn);
                     return Ok(false);
                 }
             };
@@ -227,6 +230,7 @@ impl TftpServer {
 
             assert!(self.timer.cancel_timeout(&conn.timeout).is_some());
             if close_connection {
+                println!("Closing connection for token: {:?}", token);
                 self.poll.deregister(&conn.conn)?;
             } else {
                 // Reset timeout
@@ -362,7 +366,7 @@ fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> Result<bool>
     };
     conn.conn.send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
 
-    Ok(false)
+    Ok(amount < 512)
 }
 
 fn handle_data_packet(block_num: u16,
