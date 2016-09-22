@@ -27,25 +27,6 @@ pub fn start_server() -> Result<SocketAddr> {
     Ok(addr)
 }
 
-/// Tests the server by sending a bunch of input messages and asserting
-/// that the responses are the same as in the expected.
-pub fn test_tftp(server_addr: &SocketAddr,
-                 input_msgs: Vec<Packet>,
-                 output_msgs: Vec<Packet>)
-                 -> Result<()> {
-    let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
-    for (input, output) in input_msgs.into_iter().zip(output_msgs.into_iter()) {
-        let input_bytes = input.bytes()?;
-        socket.send_to(input_bytes.to_slice(), server_addr)?;
-
-        let mut reply_buf = [0; MAX_PACKET_SIZE];
-        let (amt, src) = socket.recv_from(&mut reply_buf)?;
-        let reply_packet = Packet::read(PacketData::new(reply_buf, amt))?;
-        assert_eq!(reply_packet, output);
-    }
-    Ok(())
-}
-
 pub fn check_similar_files(file1: &mut File, file2: &mut File) -> Result<()> {
     let mut buf1 = String::new();
     let mut buf2 = String::new();
@@ -85,12 +66,18 @@ fn timeout_test(server_addr: &SocketAddr) -> Result<()> {
 }
 
 fn wrq_initial_ack_test(server_addr: &SocketAddr) -> Result<()> {
-    let input_packets = vec![Packet::WRQ {
-                                 filename: "hello.txt".to_string(),
-                                 mode: "octet".to_string(),
-                             }];
-    let expected_packets = vec![Packet::ACK(0)];
-    test_tftp(server_addr, input_packets, expected_packets)?;
+    let input = Packet::WRQ {
+        filename: "hello.txt".to_string(),
+        mode: "octet".to_string(),
+    };
+    let expected = Packet::ACK(0);
+
+    let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
+    socket.send_to(input.bytes()?.to_slice(), server_addr)?;
+
+    let mut buf = [0; MAX_PACKET_SIZE];
+    let amt = socket.recv(&mut buf)?;
+    assert_eq!(Packet::read(PacketData::new(buf, amt))?, expected);
 
     // Test that hello.txt was created and remove hello.txt
     assert!(fs::metadata("./hello.txt").is_ok());
@@ -99,19 +86,25 @@ fn wrq_initial_ack_test(server_addr: &SocketAddr) -> Result<()> {
 }
 
 fn rrq_initial_data_test(server_addr: &SocketAddr) -> Result<()> {
-    let input_packets = vec![Packet::RRQ {
-                                 filename: "./files/hello.txt".to_string(),
-                                 mode: "octet".to_string(),
-                             }];
+    let input = Packet::RRQ {
+        filename: "./files/hello.txt".to_string(),
+        mode: "octet".to_string(),
+    };
     let mut file = File::open("./files/hello.txt")?;
     let mut buf = [0; 512];
     let amount = file.read(&mut buf)?;
-    let expected_packets = vec![Packet::DATA {
-                                    block_num: 1,
-                                    data: DataBytes(buf),
-                                    len: amount,
-                                }];
-    test_tftp(server_addr, input_packets, expected_packets)?;
+    let expected = Packet::DATA {
+        block_num: 1,
+        data: DataBytes(buf),
+        len: amount,
+    };
+
+    let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
+    socket.send_to(input.bytes()?.to_slice(), server_addr)?;
+
+    let mut buf = [0; MAX_PACKET_SIZE];
+    let amt = socket.recv(&mut buf)?;
+    assert_eq!(Packet::read(PacketData::new(buf, amt))?, expected);
     Ok(())
 }
 

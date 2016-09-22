@@ -67,6 +67,9 @@ pub const MODES: [&'static str; 3] = ["netascii", "octet", "mail"];
 pub const MAX_PACKET_SIZE: usize = 1024;
 pub const MAX_DATA_SIZE: usize = 516;
 
+/// The byte representation of a packet. Because many packets can
+/// be smaller than the maximum packet size, it contains a length
+/// parameter so that the actual packet size can be determined.
 pub struct PacketData {
     bytes: [u8; MAX_PACKET_SIZE],
     len: usize,
@@ -80,6 +83,7 @@ impl PacketData {
         }
     }
 
+    /// Returns a byte slice that can be sent through a socket.
     pub fn to_slice<'a>(&'a self) -> &'a [u8] {
         &self.bytes[0..self.len]
     }
@@ -99,6 +103,8 @@ impl Clone for PacketData {
     }
 }
 
+/// A wrapper around the data that is to be sent in a TFTP DATA packet
+/// so that the data can be cloned and compared for equality.
 pub struct DataBytes(pub [u8; 512]);
 
 impl PartialEq for DataBytes {
@@ -244,7 +250,6 @@ fn read_rw_packet(code: OpCode, bytes: PacketData) -> Result<Packet> {
 fn read_data_packet(bytes: PacketData) -> Result<Packet> {
     let block_num = merge_bytes(bytes.bytes[2], bytes.bytes[3]);
     let mut data = [0; 512];
-    // TODO(DarinM223): refactor to use iterators instead of indexing
     for i in 0..512 {
         data[i] = bytes.bytes[i + 4];
     }

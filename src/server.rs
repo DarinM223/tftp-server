@@ -15,8 +15,11 @@ use std::str::FromStr;
 use std::time::Duration;
 use std::u16;
 
+/// Timeout time until packet is re-sent.
 const TIMEOUT: u64 = 3;
+/// The token used by the server UDP socket.
 const SERVER: Token = Token(0);
+/// The token used by the timer.
 const TIMER: Token = Token(1);
 
 #[derive(Debug)]
@@ -24,8 +27,17 @@ pub enum TftpError {
     PacketError(PacketErr),
     IoError(io::Error),
     TimerError(TimerError),
+    /// Error returned when the server cannot
+    /// find a random open UDP port within 100 tries.
     NoOpenSocket,
+    /// Error when the connection is to be closed normally
+    /// like when a data packet is smaller than 516 bytes.
+    /// The server should just close the connection without
+    /// propagating up the error.
     CloseConnection,
+    /// Error when the socket receives a None value instead
+    /// of the source address when receiving from a socket.
+    /// This error should be ignored by the server.
     NoneFromSocket,
 }
 
@@ -122,7 +134,6 @@ impl TftpServer {
         })
     }
 
-
     /// Returns a new token created from incrementing a counter.
     fn generate_token(&mut self) -> Token {
         let token = Token(self.new_token);
@@ -130,6 +141,8 @@ impl TftpServer {
         token
     }
 
+    /// Cancels a connection given the connection's token. It cancels the
+    /// connection's timeout and deregisters the connection's socket from the event loop.
     fn cancel_connection(&mut self, token: &Token) -> Result<()> {
         if let Some(conn) = self.connections.remove(token) {
             self.poll.deregister(&conn.conn)?;
@@ -138,12 +151,11 @@ impl TftpServer {
         Ok(())
     }
 
+    /// Resets a connection's timeout given the connection's token.
     fn reset_timeout(&mut self, token: &Token) -> Result<()> {
         if let Some(ref mut conn) = self.connections.get_mut(token) {
             self.timer.cancel_timeout(&conn.timeout);
             conn.timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT), *token)?;
-        } else {
-            panic!("No connection for token");
         }
         Ok(())
     }
@@ -201,7 +213,7 @@ impl TftpServer {
                 println!("Timeout: resending last packet for token: {:?}", token);
                 conn.conn.send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
             }
-            self.reset_timeout(&token);
+            self.reset_timeout(&token)?;
         }
 
         Ok(())
@@ -248,6 +260,7 @@ impl TftpServer {
                     _ => {}
                 }
             }
+            TIMER => self.handle_timer()?,
             token if self.connections.get(&token).is_some() => {
                 match self.handle_connection_packet(token) {
                     Err(TftpError::CloseConnection) => {}
@@ -263,7 +276,6 @@ impl TftpServer {
                 self.cancel_connection(&token)?;
                 return Ok(());
             }
-            TIMER => self.handle_timer()?,
             _ => unreachable!(),
         }
 
@@ -341,7 +353,7 @@ fn handle_rrq_packet(filename: String, mode: String) -> Result<(File, u16, Packe
     let mut buf = [0; 512];
     let amount = file.read(&mut buf)?;
 
-    // Reply with first data packet with a block number of 1
+    // Reply with first data packet with a block number of 1.
     let last_packet = Packet::DATA {
         block_num: block_num,
         data: DataBytes(buf),
@@ -358,7 +370,7 @@ fn handle_wrq_packet(filename: String, mode: String) -> Result<(File, u16, Packe
     let file = File::create(filename)?;
     let block_num = 0;
 
-    // Reply with ACK with a block number of 0
+    // Reply with ACK with a block number of 0.
     let last_packet = Packet::ACK(block_num);
 
     Ok((file, block_num, last_packet))
@@ -374,7 +386,7 @@ fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> Result<()> {
     let mut buf = [0; 512];
     let amount = conn.file.read(&mut buf)?;
 
-    // Send next data packet
+    // Send next data packet.
     conn.last_packet = Packet::DATA {
         block_num: conn.block_num,
         data: DataBytes(buf),
@@ -397,13 +409,13 @@ fn handle_data_packet(block_num: u16,
     println!("Received data with block number {}", block_num);
 
     incr_block_num(&mut conn.block_num);
-    if block_num < conn.block_num {
+    if block_num != conn.block_num {
         return Ok(());
     }
 
     conn.file.write(&data.0[0..len])?;
 
-    // Send ACK packet for data
+    // Send ACK packet for data.
     conn.last_packet = Packet::ACK(conn.block_num);
     conn.conn.send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
 
