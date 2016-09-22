@@ -34,19 +34,14 @@ pub fn test_tftp(server_addr: &SocketAddr,
                  output_msgs: Vec<Packet>)
                  -> Result<()> {
     let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
-    let mut recv_src = None;
     for (input, output) in input_msgs.into_iter().zip(output_msgs.into_iter()) {
         let input_bytes = input.bytes()?;
         socket.send_to(input_bytes.to_slice(), server_addr)?;
 
         let mut reply_buf = [0; MAX_PACKET_SIZE];
         let (amt, src) = socket.recv_from(&mut reply_buf)?;
-        recv_src = Some(src);
         let reply_packet = Packet::read(PacketData::new(reply_buf, amt))?;
         assert_eq!(reply_packet, output);
-    }
-    if let Some(src) = recv_src {
-        socket.send_to(&[1, 2, 3], src)?;
     }
     Ok(())
 }

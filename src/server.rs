@@ -15,7 +15,7 @@ use std::str::FromStr;
 use std::time::Duration;
 use std::u16;
 
-const TIMEOUT: u64 = 2;
+const TIMEOUT: u64 = 3;
 const SERVER: Token = Token(0);
 const TIMER: Token = Token(1);
 
@@ -140,7 +140,7 @@ impl TftpServer {
 
     fn reset_timeout(&mut self, token: &Token) -> Result<()> {
         if let Some(ref mut conn) = self.connections.get_mut(token) {
-            self.timer.cancel_timeout(&conn.timeout).expect("Error canceling timeout");
+            self.timer.cancel_timeout(&conn.timeout);
             conn.timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT), *token)?;
         } else {
             panic!("No connection for token");
@@ -191,13 +191,17 @@ impl TftpServer {
     /// It gets the connection from the token and resends
     /// the last packet sent from the connection.
     fn handle_timer(&mut self) -> Result<()> {
-        let token = match self.timer.poll() {
-            Some(token) => token,
-            None => return Ok(()),
-        };
-        if let Some(ref mut conn) = self.connections.get_mut(&token) {
-            println!("Timeout: resending last packet for token: {:?}", token);
-            conn.conn.send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
+        let mut tokens = Vec::new();
+        while let Some(token) = self.timer.poll() {
+            tokens.push(token);
+        }
+
+        for token in tokens {
+            if let Some(ref mut conn) = self.connections.get_mut(&token) {
+                println!("Timeout: resending last packet for token: {:?}", token);
+                conn.conn.send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
+            }
+            self.reset_timeout(&token);
         }
 
         Ok(())
