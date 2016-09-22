@@ -15,7 +15,7 @@ use std::str::FromStr;
 use std::time::Duration;
 use std::u16;
 
-const TIMEOUT_LENGTH: u64 = 5;
+const TIMEOUT: u64 = 2;
 const SERVER: Token = Token(0);
 const TIMER: Token = Token(1);
 
@@ -25,6 +25,8 @@ pub enum TftpError {
     IoError(io::Error),
     TimerError(TimerError),
     NoOpenSocket,
+    CloseConnection,
+    NoneFromSocket,
 }
 
 impl From<io::Error> for TftpError {
@@ -89,7 +91,7 @@ impl TftpServer {
     /// Creates a new TFTP server from a random open UDP port.
     pub fn new() -> Result<TftpServer> {
         let poll = Poll::new()?;
-        let socket = UdpSocket::from_socket(create_socket(Duration::from_secs(TIMEOUT_LENGTH))?)?;
+        let socket = UdpSocket::from_socket(create_socket(Some(Duration::from_secs(TIMEOUT)))?)?;
         let timer = Timer::default();
         poll.register(&socket, SERVER, Ready::all(), PollOpt::edge())?;
         poll.register(&timer, TIMER, Ready::readable(), PollOpt::edge())?;
@@ -128,36 +130,34 @@ impl TftpServer {
         token
     }
 
+    fn cancel_connection(&mut self, token: &Token) -> Result<()> {
+        if let Some(conn) = self.connections.remove(token) {
+            self.poll.deregister(&conn.conn)?;
+            self.timer.cancel_timeout(&conn.timeout).expect("Error canceling timeout");
+        }
+        Ok(())
+    }
+
+    fn reset_timeout(&mut self, token: &Token) -> Result<()> {
+        if let Some(ref mut conn) = self.connections.get_mut(token) {
+            self.timer.cancel_timeout(&conn.timeout).expect("Error canceling timeout");
+            conn.timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT), *token)?;
+        } else {
+            panic!("No connection for token");
+        }
+        Ok(())
+    }
+
     /// Handles a packet sent to the main server connection.
     /// It opens a new UDP connection in a random port and replies with either an ACK
     /// or a DATA packet depending on the whether it received an RRQ or a WRQ packet.
-    fn handle_server_packet(&mut self) -> Result<bool> {
+    fn handle_server_packet(&mut self) -> Result<()> {
         let mut buf = [0; MAX_PACKET_SIZE];
         let (amt, src) = match self.socket.recv_from(&mut buf)? {
             Some((amt, src)) => (amt, src),
-            None => {
-                println!("Getting None when receiving from server socket");
-                return Ok(false);
-            }
+            None => return Err(TftpError::NoneFromSocket),
         };
         let packet = Packet::read(PacketData::new(buf, amt))?;
-
-        // Only allow RRQ and WRQ packets to be received
-        match packet {
-            Packet::RRQ { .. } |
-            Packet::WRQ { .. } => {}
-            _ => {
-                println!("Error: Received invalid packet");
-                return Ok(false);
-            }
-        }
-
-        // Create new connection.
-        let socket = UdpSocket::from_socket(create_socket(Duration::from_secs(TIMEOUT_LENGTH))?)?;
-        let token = self.generate_token();
-        let timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT_LENGTH), token)?;
-
-        self.poll.register(&socket, token, Ready::all(), PollOpt::edge())?;
 
         // Handle the RRQ or WRQ packet.
         let (file, block_num, send_packet) = match packet {
@@ -166,8 +166,14 @@ impl TftpServer {
             _ => unreachable!(),
         };
 
-        socket.send_to(send_packet.clone().bytes()?.to_slice(), &src)?;
+        // Create new connection.
+        let socket = UdpSocket::from_socket(create_socket(Some(Duration::from_secs(TIMEOUT)))?)?;
+        let token = self.generate_token();
+        let timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT), token)?;
+        self.poll.register(&socket, token, Ready::all(), PollOpt::edge())?;
+        println!("Created connection with token: {:?}", token);
 
+        socket.send_to(send_packet.clone().bytes()?.to_slice(), &src)?;
         self.connections.insert(token,
                                 ConnectionState {
                                     conn: socket,
@@ -178,94 +184,98 @@ impl TftpServer {
                                     addr: src,
                                 });
 
-        Ok(false)
+        Ok(())
     }
 
     /// Handles the event when a timer times out.
     /// It gets the connection from the token and resends
     /// the last packet sent from the connection.
-    fn handle_timer(&mut self) -> Result<bool> {
+    fn handle_timer(&mut self) -> Result<()> {
         let token = match self.timer.poll() {
             Some(token) => token,
-            None => return Ok(false),
+            None => return Ok(()),
         };
         if let Some(ref mut conn) = self.connections.get_mut(&token) {
-            println!("Timeout: resending last packet");
+            println!("Timeout: resending last packet for token: {:?}", token);
             conn.conn.send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
         }
 
-        Ok(false)
+        Ok(())
     }
 
     /// Handles a packet sent to an open child connection.
-    fn handle_connection_packet(&mut self, token: Token) -> Result<bool> {
-        if let Some(mut conn) = self.connections.remove(&token) {
+    fn handle_connection_packet(&mut self, token: Token) -> Result<()> {
+        if let Some(ref mut conn) = self.connections.get_mut(&token) {
             let mut buf = [0; MAX_PACKET_SIZE];
             let amt = match conn.conn.recv_from(&mut buf)? {
                 Some((amt, _)) => amt,
-                None => {
-                    println!("Getting None when receiving from connection socket");
-
-                    // Reinsert the connection if connection is not to be closed
-                    self.connections.insert(token, conn);
-                    return Ok(false);
-                }
+                None => return Err(TftpError::NoneFromSocket),
             };
             let packet = Packet::read(PacketData::new(buf, amt))?;
 
-            let close_connection = match packet {
-                Packet::ACK(block_num) => handle_ack_packet(block_num, &mut conn)?,
+            match packet {
+                Packet::ACK(block_num) => handle_ack_packet(block_num, conn)?,
                 Packet::DATA { block_num, data, len } => {
-                    handle_data_packet(block_num, data, len, &mut conn)?
+                    handle_data_packet(block_num, data, len, conn)?
                 }
                 Packet::ERROR { .. } => {
                     println!("Error message received");
-                    true
+                    return Err(TftpError::CloseConnection);
                 }
                 _ => {
                     println!("Received invalid packet from connection");
-                    true
-                }
-            };
-
-            assert!(self.timer.cancel_timeout(&conn.timeout).is_some());
-            if close_connection {
-                println!("Closing connection for token: {:?}", token);
-                self.poll.deregister(&conn.conn)?;
-            } else {
-                // Reset timeout
-                conn.timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT_LENGTH), token)?;
-
-                // Reinsert the connection if connection is not to be closed
-                self.connections.insert(token, conn);
-            }
-        }
-
-        Ok(false)
-    }
-
-    /// Runs the server's event loop.
-    pub fn run(&mut self) -> Result<()> {
-        let mut events = Events::with_capacity(1024);
-        'main_loop: loop {
-            self.poll.poll(&mut events, None)?;
-
-            for event in events.iter() {
-                let finished = match event.token() {
-                    SERVER => self.handle_server_packet()?,
-                    TIMER => self.handle_timer()?,
-                    token if self.connections.get(&token).is_some() => {
-                        self.handle_connection_packet(token)?
-                    }
-                    _ => unreachable!(),
-                };
-                if finished {
-                    break 'main_loop;
+                    return Err(TftpError::CloseConnection);
                 }
             }
         }
 
         Ok(())
+    }
+
+    /// Called for every event sent from the event loop. The event
+    /// is a token that can either be from the server, from an open connection,
+    /// or from a timeout timer for a connection.
+    pub fn handle_token(&mut self, token: Token) -> Result<()> {
+        match token {
+            SERVER => {
+                match self.handle_server_packet() {
+                    Err(TftpError::NoneFromSocket) => {}
+                    Err(e) => println!("Error: {:?}", e),
+                    _ => {}
+                }
+            }
+            token if self.connections.get(&token).is_some() => {
+                match self.handle_connection_packet(token) {
+                    Err(TftpError::CloseConnection) => {}
+                    Err(TftpError::NoneFromSocket) => return Ok(()),
+                    Err(e) => println!("Error: {:?}", e),
+                    _ => {
+                        self.reset_timeout(&token)?;
+                        return Ok(());
+                    }
+                }
+
+                println!("Closing connection with token {:?}", token);
+                self.cancel_connection(&token)?;
+                return Ok(());
+            }
+            TIMER => self.handle_timer()?,
+            _ => unreachable!(),
+        }
+
+        Ok(())
+    }
+
+    /// Runs the server's event loop.
+    pub fn run(&mut self) -> Result<()> {
+        let mut events = Events::with_capacity(1024);
+        loop {
+            self.poll.poll(&mut events, None)?;
+
+            for event in events.iter() {
+                self.handle_token(event.token())?;
+            }
+        }
     }
 
     /// Returns the socket address of the server socket.
@@ -277,7 +287,7 @@ impl TftpServer {
 /// Creates a std::net::UdpSocket on a random open UDP port.
 /// The range of valid ports is from 0 to 65535 and if the function
 /// cannot find a open port within 100 different random ports it returns an error.
-pub fn create_socket(timeout: Duration) -> Result<net::UdpSocket> {
+pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
     let mut num_failures = 0;
     let mut past_ports = HashMap::new();
     loop {
@@ -291,8 +301,10 @@ pub fn create_socket(timeout: Duration) -> Result<net::UdpSocket> {
         let socket_addr = SocketAddr::from_str(addr.as_str()).expect("Error parsing address");
         match net::UdpSocket::bind(&socket_addr) {
             Ok(socket) => {
-                socket.set_read_timeout(Some(timeout))?;
-                socket.set_write_timeout(Some(timeout))?;
+                if let Some(timeout) = timeout {
+                    socket.set_read_timeout(Some(timeout))?;
+                    socket.set_write_timeout(Some(timeout))?;
+                }
                 return Ok(socket);
             }
             Err(_) => {
@@ -348,10 +360,10 @@ fn handle_wrq_packet(filename: String, mode: String) -> Result<(File, u16, Packe
     Ok((file, block_num, last_packet))
 }
 
-fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> Result<bool> {
+fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> Result<()> {
     println!("Received ACK with block number {}", block_num);
     if block_num != conn.block_num {
-        return Ok(true);
+        return Ok(());
     }
 
     incr_block_num(&mut conn.block_num);
@@ -366,19 +378,23 @@ fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> Result<bool>
     };
     conn.conn.send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
 
-    Ok(amount < 512)
+    if amount < 512 {
+        Err(TftpError::CloseConnection)
+    } else {
+        Ok(())
+    }
 }
 
 fn handle_data_packet(block_num: u16,
                       data: DataBytes,
                       len: usize,
                       conn: &mut ConnectionState)
-                      -> Result<bool> {
+                      -> Result<()> {
     println!("Received data with block number {}", block_num);
 
     incr_block_num(&mut conn.block_num);
-    if block_num != conn.block_num {
-        return Ok(true);
+    if block_num < conn.block_num {
+        return Ok(());
     }
 
     conn.file.write(&data.0[0..len])?;
@@ -387,5 +403,9 @@ fn handle_data_packet(block_num: u16,
     conn.last_packet = Packet::ACK(conn.block_num);
     conn.conn.send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
 
-    Ok(len < 512)
+    if len < 512 {
+        Err(TftpError::CloseConnection)
+    } else {
+        Ok(())
+    }
 }

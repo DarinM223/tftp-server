@@ -33,15 +33,20 @@ pub fn test_tftp(server_addr: &SocketAddr,
                  input_msgs: Vec<Packet>,
                  output_msgs: Vec<Packet>)
                  -> Result<()> {
-    let socket = create_socket(Duration::from_secs(TIMEOUT))?;
+    let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
+    let mut recv_src = None;
     for (input, output) in input_msgs.into_iter().zip(output_msgs.into_iter()) {
         let input_bytes = input.bytes()?;
         socket.send_to(input_bytes.to_slice(), server_addr)?;
 
         let mut reply_buf = [0; MAX_PACKET_SIZE];
-        let (amt, _) = socket.recv_from(&mut reply_buf)?;
+        let (amt, src) = socket.recv_from(&mut reply_buf)?;
+        recv_src = Some(src);
         let reply_packet = Packet::read(PacketData::new(reply_buf, amt))?;
         assert_eq!(reply_packet, output);
+    }
+    if let Some(src) = recv_src {
+        socket.send_to(&[1, 2, 3], src)?;
     }
     Ok(())
 }
@@ -54,6 +59,33 @@ pub fn check_similar_files(file1: &mut File, file2: &mut File) -> Result<()> {
     file2.read_to_string(&mut buf2)?;
 
     assert_eq!(buf1, buf2);
+    Ok(())
+}
+
+fn timeout_test(server_addr: &SocketAddr) -> Result<()> {
+    let socket = create_socket(None)?;
+    let init_packet = Packet::WRQ {
+        filename: "hello.txt".to_string(),
+        mode: "octet".to_string(),
+    };
+    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
+
+    let mut buf = [0; MAX_PACKET_SIZE];
+    let amt = socket.recv(&mut buf)?;
+    let reply_packet = Packet::read(PacketData::new(buf, amt))?;
+    assert_eq!(reply_packet, Packet::ACK(0));
+
+    println!("Received first packet");
+
+    let mut buf = [0; MAX_PACKET_SIZE];
+    let amt = socket.recv(&mut buf)?;
+    let reply_packet = Packet::read(PacketData::new(buf, amt))?;
+    assert_eq!(reply_packet, Packet::ACK(0));
+
+    println!("Received timeout packet");
+
+    assert!(fs::metadata("./hello.txt").is_ok());
+    assert!(fs::remove_file("./hello.txt").is_ok());
     Ok(())
 }
 
@@ -89,7 +121,7 @@ fn rrq_initial_data_test(server_addr: &SocketAddr) -> Result<()> {
 }
 
 fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
-    let socket = create_socket(Duration::from_secs(TIMEOUT))?;
+    let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
     let init_packet = Packet::WRQ {
         filename: "hello.txt".to_string(),
         mode: "octet".to_string(),
@@ -138,7 +170,7 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
 }
 
 fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
-    let socket = create_socket(Duration::from_secs(TIMEOUT))?;
+    let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
     let init_packet = Packet::RRQ {
         filename: "./files/hello.txt".to_string(),
         mode: "octet".to_string(),
@@ -189,6 +221,8 @@ fn main() {
     thread::sleep(Duration::from_millis(1000));
     wrq_initial_ack_test(&server_addr).unwrap();
     rrq_initial_data_test(&server_addr).unwrap();
+    thread::sleep(Duration::from_millis(1000));
     wrq_whole_file_test(&server_addr).unwrap();
     rrq_whole_file_test(&server_addr).unwrap();
+    timeout_test(&server_addr).unwrap();
 }
