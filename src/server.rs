@@ -1,10 +1,11 @@
 use mio::*;
 use mio::timer::{Timer, TimerError, Timeout};
 use mio::udp::UdpSocket;
-use packet::{MAX_PACKET_SIZE, DataBytes, Packet, PacketData, PacketErr};
+use packet::{ErrorCode, MAX_PACKET_SIZE, DataBytes, Packet, PacketData, PacketErr};
 use rand;
 use rand::Rng;
 use std::collections::HashMap;
+use std::fs;
 use std::fs::File;
 use std::io;
 use std::io::{Read, Write};
@@ -27,6 +28,10 @@ pub enum TftpError {
     PacketError(PacketErr),
     IoError(io::Error),
     TimerError(TimerError),
+    /// Error defined within the TFTP spec with an usigned integer
+    /// error code. The server should reply with an error packet
+    /// to the given socket address when handling this error.
+    TftpError(ErrorCode, SocketAddr),
     /// Error returned when the server cannot
     /// find a random open UDP port within 100 tries.
     NoOpenSocket,
@@ -173,9 +178,9 @@ impl TftpServer {
 
         // Handle the RRQ or WRQ packet.
         let (file, block_num, send_packet) = match packet {
-            Packet::RRQ { filename, mode } => handle_rrq_packet(filename, mode)?,
-            Packet::WRQ { filename, mode } => handle_wrq_packet(filename, mode)?,
-            _ => unreachable!(),
+            Packet::RRQ { filename, mode } => handle_rrq_packet(filename, mode, &src)?,
+            Packet::WRQ { filename, mode } => handle_wrq_packet(filename, mode, &src)?,
+            _ => return Err(TftpError::TftpError(ErrorCode::IllegalTFTP, src)),
         };
 
         // Create new connection.
@@ -234,17 +239,27 @@ impl TftpServer {
                 Packet::DATA { block_num, data, len } => {
                     handle_data_packet(block_num, data, len, conn)?
                 }
-                Packet::ERROR { .. } => {
-                    println!("Error message received");
-                    return Err(TftpError::CloseConnection);
+                Packet::ERROR { code, msg } => {
+                    println!("Error message received with code {:?}: {:?}", code, msg);
+                    return Err(TftpError::TftpError(code, conn.addr));
                 }
                 _ => {
                     println!("Received invalid packet from connection");
-                    return Err(TftpError::CloseConnection);
+                    return Err(TftpError::TftpError(ErrorCode::IllegalTFTP, conn.addr));
                 }
             }
         }
 
+        Ok(())
+    }
+
+    /// Handles sending error packets given the error code.
+    fn handle_error(&mut self, token: &Token, code: ErrorCode, addr: &SocketAddr) -> Result<()> {
+        if *token == SERVER {
+            self.socket.send_to(code.to_packet().bytes()?.to_slice(), addr)?;
+        } else if let Some(ref mut conn) = self.connections.get_mut(&token) {
+            conn.conn.send_to(code.to_packet().bytes()?.to_slice(), addr)?;
+        }
         Ok(())
     }
 
@@ -256,6 +271,9 @@ impl TftpServer {
             SERVER => {
                 match self.handle_server_packet() {
                     Err(TftpError::NoneFromSocket) => {}
+                    Err(TftpError::TftpError(code, addr)) => {
+                        self.handle_error(&token, code, &addr)?
+                    }
                     Err(e) => println!("Error: {:?}", e),
                     _ => {}
                 }
@@ -265,6 +283,9 @@ impl TftpServer {
                 match self.handle_connection_packet(token) {
                     Err(TftpError::CloseConnection) => {}
                     Err(TftpError::NoneFromSocket) => return Ok(()),
+                    Err(TftpError::TftpError(code, addr)) => {
+                        self.handle_error(&token, code, &addr)?
+                    }
                     Err(e) => println!("Error: {:?}", e),
                     _ => {
                         self.reset_timeout(&token)?;
@@ -343,11 +364,15 @@ pub fn incr_block_num(block_num: &mut u16) {
     }
 }
 
-fn handle_rrq_packet(filename: String, mode: String) -> Result<(File, u16, Packet)> {
+fn handle_rrq_packet(filename: String,
+                     mode: String,
+                     addr: &SocketAddr)
+                     -> Result<(File, u16, Packet)> {
     println!("Received RRQ packet with filename {} and mode {}",
              filename,
              mode);
-    let mut file = File::open(filename)?;
+    let mut file = File::open(filename)
+        .map_err(|_| TftpError::TftpError(ErrorCode::FileNotFound, *addr))?;
     let block_num = 1;
 
     let mut buf = [0; 512];
@@ -363,10 +388,16 @@ fn handle_rrq_packet(filename: String, mode: String) -> Result<(File, u16, Packe
     Ok((file, block_num, last_packet))
 }
 
-fn handle_wrq_packet(filename: String, mode: String) -> Result<(File, u16, Packet)> {
+fn handle_wrq_packet(filename: String,
+                     mode: String,
+                     addr: &SocketAddr)
+                     -> Result<(File, u16, Packet)> {
     println!("Received WRQ packet with filename {} and mode {}",
              filename,
              mode);
+    if let Ok(_) = fs::metadata(&filename) {
+        return Err(TftpError::TftpError(ErrorCode::FileExists, *addr));
+    }
     let file = File::create(filename)?;
     let block_num = 0;
 

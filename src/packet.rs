@@ -41,7 +41,7 @@ impl OpCode {
 }
 
 #[repr(u16)]
-#[derive(PartialEq, Clone, Debug)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum ErrorCode {
     NotDefined = 0,
     FileNotFound = 1,
@@ -59,6 +59,31 @@ impl ErrorCode {
             Ok(unsafe { mem::transmute(i) })
         } else {
             Err(PacketErr::ErrCodeOutOfBounds)
+        }
+    }
+
+    /// Returns the string description of the error code.
+    pub fn to_string(&self) -> String {
+        (match *self {
+                ErrorCode::NotDefined => "Not defined, see error message (if any).",
+                ErrorCode::FileNotFound => "File not found.",
+                ErrorCode::AccessViolation => "Access violation.",
+                ErrorCode::DiskFull => "Disk full or allocation exceeded.",
+                ErrorCode::IllegalTFTP => "Illegal TFTP operation.",
+                ErrorCode::UnknownID => "Unknown transfer ID.",
+                ErrorCode::FileExists => "File already exists.",
+                ErrorCode::NoUser => "No such user.",
+            })
+            .to_string()
+    }
+
+    /// Returns the ERROR packet with the error code and
+    /// the default description as the error message.
+    pub fn to_packet(&self) -> Packet {
+        let msg = self.to_string();
+        Packet::ERROR {
+            code: *self,
+            msg: msg,
         }
     }
 }

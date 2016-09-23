@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::thread;
 use std::time::Duration;
-use tftp_server::packet::{DataBytes, Packet, PacketData, MAX_PACKET_SIZE};
+use tftp_server::packet::{ErrorCode, DataBytes, Packet, PacketData, MAX_PACKET_SIZE};
 use tftp_server::server::{create_socket, incr_block_num, Result, TftpServer};
 
 const TIMEOUT: u64 = 3;
@@ -114,8 +114,7 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
         filename: "hello.txt".to_string(),
         mode: "octet".to_string(),
     };
-    let init_packet_bytes = init_packet.bytes()?;
-    socket.send_to(init_packet_bytes.to_slice(), server_addr)?;
+    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
 
     {
         let mut file = File::open("./files/hello.txt")?;
@@ -163,8 +162,7 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
         filename: "./files/hello.txt".to_string(),
         mode: "octet".to_string(),
     };
-    let init_packet_bytes = init_packet.bytes()?;
-    socket.send_to(init_packet_bytes.to_slice(), server_addr)?;
+    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
 
     {
         let mut file = File::create("./hello.txt")?;
@@ -204,6 +202,44 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
     Ok(())
 }
 
+fn wrq_file_exists_test(server_addr: &SocketAddr) -> Result<()> {
+    let socket = create_socket(None)?;
+    let init_packet = Packet::WRQ {
+        filename: "./files/hello.txt".to_string(),
+        mode: "octet".to_string(),
+    };
+    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
+
+    let mut buf = [0; MAX_PACKET_SIZE];
+    let amt = socket.recv(&mut buf)?;
+    let packet = Packet::read(PacketData::new(buf, amt))?;
+    if let Packet::ERROR { code, .. } = packet {
+        assert_eq!(code, ErrorCode::FileExists);
+    } else {
+        panic!(format!("Packet has to be error packet, got: {:?}", packet));
+    }
+    Ok(())
+}
+
+fn rrq_file_not_found_test(server_addr: &SocketAddr) -> Result<()> {
+    let socket = create_socket(None)?;
+    let init_packet = Packet::RRQ {
+        filename: "./hello.txt".to_string(),
+        mode: "octet".to_string(),
+    };
+    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
+
+    let mut buf = [0; MAX_PACKET_SIZE];
+    let amt = socket.recv(&mut buf)?;
+    let packet = Packet::read(PacketData::new(buf, amt))?;
+    if let Packet::ERROR { code, .. } = packet {
+        assert_eq!(code, ErrorCode::FileNotFound);
+    } else {
+        panic!(format!("Packet has to be error packet, got: {:?}", packet));
+    }
+    Ok(())
+}
+
 fn main() {
     let server_addr = start_server().unwrap();
     thread::sleep(Duration::from_millis(1000));
@@ -213,4 +249,6 @@ fn main() {
     wrq_whole_file_test(&server_addr).unwrap();
     rrq_whole_file_test(&server_addr).unwrap();
     timeout_test(&server_addr).unwrap();
+    wrq_file_exists_test(&server_addr).unwrap();
+    rrq_file_not_found_test(&server_addr).unwrap();
 }
