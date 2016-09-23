@@ -188,7 +188,7 @@ impl TftpServer {
         let token = self.generate_token();
         let timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT), token)?;
         self.poll.register(&socket, token, Ready::all(), PollOpt::edge())?;
-        println!("Created connection with token: {:?}", token);
+        info!("Created connection with token: {:?}", token);
 
         socket.send_to(send_packet.clone().bytes()?.to_slice(), &src)?;
         self.connections.insert(token,
@@ -215,7 +215,7 @@ impl TftpServer {
 
         for token in tokens {
             if let Some(ref mut conn) = self.connections.get_mut(&token) {
-                println!("Timeout: resending last packet for token: {:?}", token);
+                info!("Timeout: resending last packet for token: {:?}", token);
                 conn.conn.send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
             }
             self.reset_timeout(&token)?;
@@ -240,11 +240,11 @@ impl TftpServer {
                     handle_data_packet(block_num, data, len, conn)?
                 }
                 Packet::ERROR { code, msg } => {
-                    println!("Error message received with code {:?}: {:?}", code, msg);
+                    error!("Error message received with code {:?}: {:?}", code, msg);
                     return Err(TftpError::TftpError(code, conn.addr));
                 }
                 _ => {
-                    println!("Received invalid packet from connection");
+                    error!("Received invalid packet from connection");
                     return Err(TftpError::TftpError(ErrorCode::IllegalTFTP, conn.addr));
                 }
             }
@@ -274,7 +274,7 @@ impl TftpServer {
                     Err(TftpError::TftpError(code, addr)) => {
                         self.handle_error(&token, code, &addr)?
                     }
-                    Err(e) => println!("Error: {:?}", e),
+                    Err(e) => error!("Error: {:?}", e),
                     _ => {}
                 }
             }
@@ -286,14 +286,14 @@ impl TftpServer {
                     Err(TftpError::TftpError(code, addr)) => {
                         self.handle_error(&token, code, &addr)?
                     }
-                    Err(e) => println!("Error: {:?}", e),
+                    Err(e) => error!("Error: {:?}", e),
                     _ => {
                         self.reset_timeout(&token)?;
                         return Ok(());
                     }
                 }
 
-                println!("Closing connection with token {:?}", token);
+                info!("Closing connection with token {:?}", token);
                 self.cancel_connection(&token)?;
                 return Ok(());
             }
@@ -368,7 +368,7 @@ fn handle_rrq_packet(filename: String,
                      mode: String,
                      addr: &SocketAddr)
                      -> Result<(File, u16, Packet)> {
-    println!("Received RRQ packet with filename {} and mode {}",
+    info!("Received RRQ packet with filename {} and mode {}",
              filename,
              mode);
     let mut file = File::open(filename)
@@ -392,7 +392,7 @@ fn handle_wrq_packet(filename: String,
                      mode: String,
                      addr: &SocketAddr)
                      -> Result<(File, u16, Packet)> {
-    println!("Received WRQ packet with filename {} and mode {}",
+    info!("Received WRQ packet with filename {} and mode {}",
              filename,
              mode);
     if let Ok(_) = fs::metadata(&filename) {
@@ -408,7 +408,7 @@ fn handle_wrq_packet(filename: String,
 }
 
 fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> Result<()> {
-    println!("Received ACK with block number {}", block_num);
+    info!("Received ACK with block number {}", block_num);
     if block_num != conn.block_num {
         return Ok(());
     }
@@ -437,7 +437,7 @@ fn handle_data_packet(block_num: u16,
                       len: usize,
                       conn: &mut ConnectionState)
                       -> Result<()> {
-    println!("Received data with block number {}", block_num);
+    info!("Received data with block number {}", block_num);
 
     incr_block_num(&mut conn.block_num);
     if block_num != conn.block_num {

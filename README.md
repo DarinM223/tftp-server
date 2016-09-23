@@ -34,3 +34,22 @@ $ ./target/debug/tftp_server_bin 20
 thread 'main' panicked at 'Error creating server: IoError(Error { repr: Os { code: 13, message: "Permission denied" } })', ../src/libcore/result.rs:799
 note: Run with `RUST_BACKTRACE=1` for a backtrace.
 ```
+
+You can also run the server with logging enabled. To do this add `RUST_LOG=tftp_server=info` before the command.
+For example:
+
+```
+$ RUST_LOG=tftp_server=info ./target/debug/tftp_server_bin
+```
+
+This will run the server with logging enabled so that you can inspect the program's behavior.
+
+Testing
+-------
+
+In order to run the tests you can just run `cargo test`. However if you want to show the program's output during the test,
+you have to turn on logging. To run tests with logging enabled run:
+
+```
+$ RUST_LOG=tftp_server=info cargo test
+```

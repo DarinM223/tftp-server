@@ -1,5 +1,9 @@
 #![feature(question_mark)]
 
+#[macro_use]
+extern crate log;
+
+extern crate env_logger;
 extern crate tftp_server;
 
 use std::fs;
@@ -51,14 +55,11 @@ fn timeout_test(server_addr: &SocketAddr) -> Result<()> {
     let reply_packet = Packet::read(PacketData::new(buf, amt))?;
     assert_eq!(reply_packet, Packet::ACK(0));
 
-    println!("Received first packet");
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
     let reply_packet = Packet::read(PacketData::new(buf, amt))?;
     assert_eq!(reply_packet, Packet::ACK(0));
-
-    println!("Received timeout packet");
 
     assert!(fs::metadata("./hello.txt").is_ok());
     assert!(fs::remove_file("./hello.txt").is_ok());
@@ -241,6 +242,7 @@ fn rrq_file_not_found_test(server_addr: &SocketAddr) -> Result<()> {
 }
 
 fn main() {
+    env_logger::init().unwrap();
     let server_addr = start_server().unwrap();
     thread::sleep(Duration::from_millis(1000));
     wrq_initial_ack_test(&server_addr).unwrap();

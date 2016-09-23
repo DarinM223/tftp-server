@@ -1,5 +1,9 @@
 #![feature(question_mark)]
 
+#[macro_use]
+extern crate log;
+
+extern crate env_logger;
 extern crate tftp_server;
 
 use tftp_server::server::TftpServer;
@@ -8,6 +12,8 @@ use std::str::FromStr;
 use std::net::SocketAddr;
 
 fn main() {
+    env_logger::init().unwrap();
+
     let args: Vec<_> = env::args().collect();
     let mut server: TftpServer;
     if args.len() > 1 {
