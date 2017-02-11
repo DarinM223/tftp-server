@@ -371,6 +371,11 @@ fn handle_rrq_packet(filename: String,
     info!("Received RRQ packet with filename {} and mode {}",
              filename,
              mode);
+
+    if filename.contains("..") || filename.starts_with("/") {
+        return Err(TftpError::TftpError(ErrorCode::FileNotFound, *addr));
+    }
+
     let mut file = File::open(filename)
         .map_err(|_| TftpError::TftpError(ErrorCode::FileNotFound, *addr))?;
     let block_num = 1;
