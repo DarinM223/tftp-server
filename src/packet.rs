@@ -20,48 +20,57 @@ impl From<str::Utf8Error> for PacketErr {
 
 pub type Result<T> = result::Result<T, PacketErr>;
 
-#[repr(u16)]
-#[derive(PartialEq, Clone, Debug)]
-pub enum OpCode {
-    RRQ = 1,
-    WRQ = 2,
-    DATA = 3,
-    ACK = 4,
-    ERROR = 5,
-}
+macro_rules! primitive_enum {
+    (
+        $( #[$enum_attr:meta] )*
+        pub enum $enum_name:ident of $base_int:tt {
+            $( $variant:ident = $value:expr, )+
+        }
+    ) => {
+        $( #[$enum_attr] )*
+        #[repr($base_int)]
+        pub enum $enum_name {
+            $( $variant = $value, )+
+        }
 
-impl OpCode {
-    pub fn from_u16(i: u16) -> Result<OpCode> {
-        if i >= OpCode::RRQ as u16 && i <= OpCode::ERROR as u16 {
-            Ok(unsafe { mem::transmute(i) })
-        } else {
-            Err(PacketErr::OpCodeOutOfBounds)
+        // TODO: change this to a From<u16> impl
+        impl $enum_name {
+            pub fn from_u16(i: $base_int) -> Result<$enum_name> {
+                match i {
+                    $( $value => Ok($enum_name::$variant), )+
+                    _ => Err(PacketErr::OpCodeOutOfBounds)
+                }
+            }
         }
     }
 }
 
-#[repr(u16)]
-#[derive(PartialEq, Clone, Copy, Debug)]
-pub enum ErrorCode {
-    NotDefined = 0,
-    FileNotFound = 1,
-    AccessViolation = 2,
-    DiskFull = 3,
-    IllegalTFTP = 4,
-    UnknownID = 5,
-    FileExists = 6,
-    NoUser = 7,
-}
+primitive_enum! (
+    #[derive(PartialEq, Clone, Debug)]
+    pub enum OpCode of u16 {
+        RRQ = 1,
+        WRQ = 2,
+        DATA = 3,
+        ACK = 4,
+        ERROR = 5,
+    }
+);
+
+primitive_enum! (
+    #[derive(PartialEq, Clone, Copy, Debug)]
+    pub enum ErrorCode of u16 {
+        NotDefined = 0,
+        FileNotFound = 1,
+        AccessViolation = 2,
+        DiskFull = 3,
+        IllegalTFTP = 4,
+        UnknownID = 5,
+        FileExists = 6,
+        NoUser = 7,
+    }
+);
 
 impl ErrorCode {
-    pub fn from_u16(i: u16) -> Result<ErrorCode> {
-        if i >= ErrorCode::NotDefined as u16 && i <= ErrorCode::NoUser as u16 {
-            Ok(unsafe { mem::transmute(i) })
-        } else {
-            Err(PacketErr::ErrCodeOutOfBounds)
-        }
-    }
-
     /// Returns the string description of the error code.
     pub fn to_string(&self) -> String {
         (match *self {
