@@ -13,10 +13,10 @@ mio = "0.6"
 rand = "0.3"
 byteorder = "1.0"
 log = "0.3.6"
-env_logger = "0.3.5"
+env_logger = "0.4"
 
 [dev-dependencies]
-env_logger = "0.3.5"
+env_logger = "0.4"
 
 [lib]
 name = "tftp_server"
