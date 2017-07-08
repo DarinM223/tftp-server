@@ -65,16 +65,15 @@ impl ErrorCode {
     /// Returns the string description of the error code.
     pub fn to_string(&self) -> String {
         (match *self {
-                ErrorCode::NotDefined => "Not defined, see error message (if any).",
-                ErrorCode::FileNotFound => "File not found.",
-                ErrorCode::AccessViolation => "Access violation.",
-                ErrorCode::DiskFull => "Disk full or allocation exceeded.",
-                ErrorCode::IllegalTFTP => "Illegal TFTP operation.",
-                ErrorCode::UnknownID => "Unknown transfer ID.",
-                ErrorCode::FileExists => "File already exists.",
-                ErrorCode::NoUser => "No such user.",
-            })
-            .to_string()
+             ErrorCode::NotDefined => "Not defined, see error message (if any).",
+             ErrorCode::FileNotFound => "File not found.",
+             ErrorCode::AccessViolation => "Access violation.",
+             ErrorCode::DiskFull => "Disk full or allocation exceeded.",
+             ErrorCode::IllegalTFTP => "Illegal TFTP operation.",
+             ErrorCode::UnknownID => "Unknown transfer ID.",
+             ErrorCode::FileExists => "File already exists.",
+             ErrorCode::NoUser => "No such user.",
+         }).to_string()
     }
 
     /// Returns the ERROR packet with the error code and
@@ -163,24 +162,15 @@ impl fmt::Debug for DataBytes {
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum Packet {
-    RRQ {
-        filename: String,
-        mode: String,
-    },
-    WRQ {
-        filename: String,
-        mode: String,
-    },
+    RRQ { filename: String, mode: String },
+    WRQ { filename: String, mode: String },
     DATA {
         block_num: u16,
         data: DataBytes,
         len: usize,
     },
     ACK(u16),
-    ERROR {
-        code: ErrorCode,
-        msg: String,
-    },
+    ERROR { code: ErrorCode, msg: String },
 }
 
 impl Packet {
@@ -211,7 +201,11 @@ impl Packet {
         match self {
             Packet::RRQ { filename, mode } => rw_packet_bytes(OpCode::RRQ, filename, mode),
             Packet::WRQ { filename, mode } => rw_packet_bytes(OpCode::WRQ, filename, mode),
-            Packet::DATA { block_num, data, len } => data_packet_bytes(block_num, data.0, len),
+            Packet::DATA {
+                block_num,
+                data,
+                len,
+            } => data_packet_bytes(block_num, data.0, len),
             Packet::ACK(block_num) => ack_packet_bytes(block_num),
             Packet::ERROR { code, msg } => error_packet_bytes(code, msg),
         }
@@ -407,18 +401,24 @@ macro_rules! read_string {
     };
 }
 
-read_string!(test_read_string_normal,
-             "hello world!\0",
-             0,
-             "hello world!",
-             13);
-read_string!(test_read_string_zero_in_mid,
-             "hello wor\0ld!",
-             0,
-             "hello wor",
-             10);
-read_string!(test_read_string_diff_start_pos,
-             "hello world!\0",
-             6,
-             "world!",
-             13);
+read_string!(
+    test_read_string_normal,
+    "hello world!\0",
+    0,
+    "hello world!",
+    13
+);
+read_string!(
+    test_read_string_zero_in_mid,
+    "hello wor\0ld!",
+    0,
+    "hello wor",
+    10
+);
+read_string!(
+    test_read_string_diff_start_pos,
+    "hello world!\0",
+    6,
+    "world!",
+    13
+);

@@ -172,7 +172,12 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
             let (amt, src) = socket.recv_from(&mut reply_buf)?;
             recv_src = src;
             let reply_packet = Packet::read(PacketData::new(reply_buf, amt))?;
-            if let Packet::DATA { block_num, data, len } = reply_packet {
+            if let Packet::DATA {
+                block_num,
+                data,
+                len,
+            } = reply_packet
+            {
                 assert_eq!(client_block_num, block_num);
                 file.write(&data.0[0..len])?;
 

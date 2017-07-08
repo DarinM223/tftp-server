@@ -21,8 +21,10 @@ fn main() {
         server = TftpServer::new_from_addr(&socket_addr).expect("Error creating server");
     } else {
         server = TftpServer::new().expect("Error creating server");
-        println!("Server created at address: {:?}",
-                 server.local_addr().unwrap());
+        println!(
+            "Server created at address: {:?}",
+            server.local_addr().unwrap()
+        );
     }
 
     match server.run() {
