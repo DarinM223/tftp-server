@@ -1,4 +1,4 @@
-use std::{fmt, result, str};
+use std::{fmt, result, str, io};
 use std::io::Write;
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 
@@ -10,11 +10,18 @@ pub enum PacketErr {
     OpCodeOutOfBounds,
     ErrCodeOutOfBounds,
     Utf8Error(str::Utf8Error),
+    IOError(io::Error),
 }
 
 impl From<str::Utf8Error> for PacketErr {
     fn from(err: str::Utf8Error) -> PacketErr {
         PacketErr::Utf8Error(err)
+    }
+}
+
+impl From<io::Error> for PacketErr {
+    fn from(err: io::Error) -> PacketErr {
+        PacketErr::IOError(err)
     }
 }
 
@@ -186,7 +193,7 @@ impl Packet {
     /// Creates and returns a packet parsed from its byte representation.
     pub fn read(pack_data: PacketData) -> Result<Packet> {
         let mut bytes = &pack_data.bytes[..pack_data.len];
-        let opcode = OpCode::from_u16(bytes.read_u16::<BigEndian>().unwrap())?;
+        let opcode = OpCode::from_u16(bytes.read_u16::<BigEndian>()?)?;
         match opcode {
             OpCode::RRQ | OpCode::WRQ => read_rw_packet(opcode, &bytes),
             OpCode::DATA => read_data_packet(&bytes),
@@ -259,10 +266,10 @@ fn read_rw_packet(code: OpCode, bytes: &[u8]) -> Result<Packet> {
 }
 
 fn read_data_packet(mut bytes: &[u8]) -> Result<Packet> {
-    let block_num = bytes.read_u16::<BigEndian>().unwrap();
+    let block_num = bytes.read_u16::<BigEndian>()?;
     let mut data = [0; 512];
     // TODO: test with longer packets
-    let len = (&mut data[..]).write(bytes).unwrap();
+    let len = (&mut data[..]).write(bytes)?;
 
     Ok(Packet::DATA {
         block_num: block_num,
@@ -272,12 +279,12 @@ fn read_data_packet(mut bytes: &[u8]) -> Result<Packet> {
 }
 
 fn read_ack_packet(mut bytes: &[u8]) -> Result<Packet> {
-    let block_num = bytes.read_u16::<BigEndian>().unwrap();
+    let block_num = bytes.read_u16::<BigEndian>()?;
     Ok(Packet::ACK(block_num))
 }
 
 fn read_error_packet(mut bytes: &[u8]) -> Result<Packet> {
-    let error_code = ErrorCode::from_u16(bytes.read_u16::<BigEndian>().unwrap())?;
+    let error_code = ErrorCode::from_u16(bytes.read_u16::<BigEndian>()?)?;
     let (msg, _) = read_string(&bytes)?;
 
     Ok(Packet::ERROR {
@@ -296,11 +303,11 @@ fn rw_packet_bytes(packet: OpCode, filename: String, mode: String) -> Result<Pac
     let leftover = {
         let mut buf = &mut bytes[..];
 
-        buf.write_u16::<BigEndian>(packet as u16).unwrap();
-        buf.write_all(filename.as_bytes());
-        buf.write(&[0]);
-        buf.write_all(mode.as_bytes());
-        buf.write(&[0]);
+        buf.write_u16::<BigEndian>(packet as u16)?;
+        buf.write_all(filename.as_bytes())?;
+        buf.write(&[0])?;
+        buf.write_all(mode.as_bytes())?;
+        buf.write(&[0])?;
 
         buf.len() - 1 // TODO: figure out why this is needed
     };
@@ -314,9 +321,9 @@ fn data_packet_bytes(block_num: u16, data: &[u8]) -> Result<PacketData> {
     let leftover = {
         let mut buf = &mut bytes[..];
 
-        buf.write_u16::<BigEndian>(OpCode::DATA as u16).unwrap();
-        buf.write_u16::<BigEndian>(block_num).unwrap();
-        buf.write_all(data);
+        buf.write_u16::<BigEndian>(OpCode::DATA as u16)?;
+        buf.write_u16::<BigEndian>(block_num)?;
+        buf.write_all(data)?;
 
         buf.len()
     };
@@ -330,8 +337,8 @@ fn ack_packet_bytes(block_num: u16) -> Result<PacketData> {
     {
         let mut buf = &mut bytes[..];
 
-        buf.write_u16::<BigEndian>(OpCode::ACK as u16).unwrap();
-        buf.write_u16::<BigEndian>(block_num).unwrap();
+        buf.write_u16::<BigEndian>(OpCode::ACK as u16)?;
+        buf.write_u16::<BigEndian>(block_num)?;
     }
 
     Ok(PacketData::new(bytes, 4))
@@ -347,10 +354,10 @@ fn error_packet_bytes(code: ErrorCode, msg: String) -> Result<PacketData> {
     let leftover = {
         let mut buf = &mut bytes[..];
 
-        buf.write_u16::<BigEndian>(OpCode::ERROR as u16).unwrap();
-        buf.write_u16::<BigEndian>(code as u16).unwrap();
-        buf.write_all(msg.as_bytes());
-        buf.write(&[0]);
+        buf.write_u16::<BigEndian>(OpCode::ERROR as u16)?;
+        buf.write_u16::<BigEndian>(code as u16)?;
+        buf.write_all(msg.as_bytes())?;
+        buf.write(&[0])?;
 
         buf.len()
     };
