@@ -215,7 +215,7 @@ impl Packet {
                 block_num,
                 data,
                 len,
-            } => data_packet_bytes(block_num, data.0, len),
+            } => data_packet_bytes(block_num, &data.0[..len]),
             Packet::ACK(block_num) => ack_packet_bytes(block_num),
             Packet::ERROR { code, msg } => error_packet_bytes(code, msg),
         }
@@ -319,7 +319,7 @@ fn rw_packet_bytes(packet: OpCode, filename: String, mode: String) -> Result<Pac
     Ok(PacketData::new(bytes, bytes[..].len() - leftover))
 }
 
-fn data_packet_bytes(block_num: u16, data: [u8; 512], data_len: usize) -> Result<PacketData> {
+fn data_packet_bytes(block_num: u16, data: &[u8]) -> Result<PacketData> {
     let mut bytes = [0; MAX_PACKET_SIZE];
 
     let leftover = {
@@ -327,7 +327,7 @@ fn data_packet_bytes(block_num: u16, data: [u8; 512], data_len: usize) -> Result
 
         buf.write_u16::<BigEndian>(OpCode::DATA as u16).unwrap();
         buf.write_u16::<BigEndian>(block_num).unwrap();
-        buf.write_all(&data[0..data_len]);
+        buf.write_all(data);
 
         buf.len()
     };
