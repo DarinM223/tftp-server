@@ -46,7 +46,7 @@ fn timeout_test(server_addr: &SocketAddr) -> Result<()> {
         filename: "hello.txt".to_string(),
         mode: "octet".to_string(),
     };
-    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
+    socket.send_to(init_packet.to_bytes()?.to_slice(), server_addr)?;
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
@@ -72,7 +72,7 @@ fn wrq_initial_ack_test(server_addr: &SocketAddr) -> Result<()> {
     let expected = Packet::ACK(0);
 
     let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
-    socket.send_to(input.bytes()?.to_slice(), server_addr)?;
+    socket.send_to(input.to_bytes()?.to_slice(), server_addr)?;
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
@@ -99,7 +99,7 @@ fn rrq_initial_data_test(server_addr: &SocketAddr) -> Result<()> {
     };
 
     let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
-    socket.send_to(input.bytes()?.to_slice(), server_addr)?;
+    socket.send_to(input.to_bytes()?.to_slice(), server_addr)?;
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
@@ -113,7 +113,7 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
         filename: "hello.txt".to_string(),
         mode: "octet".to_string(),
     };
-    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
+    socket.send_to(init_packet.to_bytes()?.to_slice(), server_addr)?;
 
     {
         let mut file = File::open("./files/hello.txt")?;
@@ -140,7 +140,7 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
                 data: DataBytes(buf),
                 len: amount,
             };
-            socket.send_to(data_packet.bytes()?.to_slice(), &src)?;
+            socket.send_to(data_packet.to_bytes()?.to_slice(), &src)?;
         }
 
         // Would cause server to have an error if this is received.
@@ -161,7 +161,7 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
         filename: "./files/hello.txt".to_string(),
         mode: "octet".to_string(),
     };
-    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
+    socket.send_to(init_packet.to_bytes()?.to_slice(), server_addr)?;
 
     {
         let mut file = File::create("./hello.txt")?;
@@ -182,7 +182,7 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
                 file.write(&data.0[0..len])?;
 
                 let ack_packet = Packet::ACK(client_block_num);
-                socket.send_to(ack_packet.bytes()?.to_slice(), &src)?;
+                socket.send_to(ack_packet.to_bytes()?.to_slice(), &src)?;
 
                 incr_block_num(&mut client_block_num);
 
@@ -212,7 +212,7 @@ fn wrq_file_exists_test(server_addr: &SocketAddr) -> Result<()> {
         filename: "./files/hello.txt".to_string(),
         mode: "octet".to_string(),
     };
-    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
+    socket.send_to(init_packet.to_bytes()?.to_slice(), server_addr)?;
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
@@ -231,7 +231,7 @@ fn rrq_file_not_found_test(server_addr: &SocketAddr) -> Result<()> {
         filename: "./hello.txt".to_string(),
         mode: "octet".to_string(),
     };
-    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
+    socket.send_to(init_packet.to_bytes()?.to_slice(), server_addr)?;
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;

@@ -218,7 +218,7 @@ impl TftpServer {
         info!("Created connection with token: {:?}", token);
 
         socket.send_to(
-            send_packet.clone().bytes()?.to_slice(),
+            send_packet.clone().to_bytes()?.to_slice(),
             &src,
         )?;
         self.connections.insert(
@@ -249,7 +249,7 @@ impl TftpServer {
             if let Some(ref mut conn) = self.connections.get_mut(&token) {
                 info!("Timeout: resending last packet for token: {:?}", token);
                 conn.conn.send_to(
-                    conn.last_packet.clone().bytes()?.to_slice(),
+                    conn.last_packet.clone().to_bytes()?.to_slice(),
                     &conn.addr,
                 )?;
             }
@@ -294,12 +294,12 @@ impl TftpServer {
     fn handle_error(&mut self, token: &Token, code: ErrorCode, addr: &SocketAddr) -> Result<()> {
         if *token == SERVER {
             self.socket.send_to(
-                code.to_packet().bytes()?.to_slice(),
+                code.to_packet().to_bytes()?.to_slice(),
                 addr,
             )?;
         } else if let Some(ref mut conn) = self.connections.get_mut(&token) {
             conn.conn.send_to(
-                code.to_packet().bytes()?.to_slice(),
+                code.to_packet().to_bytes()?.to_slice(),
                 addr,
             )?;
         }
@@ -479,7 +479,7 @@ fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> Result<()> {
         len: amount,
     };
     conn.conn.send_to(
-        conn.last_packet.clone().bytes()?.to_slice(),
+        conn.last_packet.clone().to_bytes()?.to_slice(),
         &conn.addr,
     )?;
 
@@ -508,7 +508,7 @@ fn handle_data_packet(
     // Send ACK packet for data.
     conn.last_packet = Packet::ACK(conn.block_num);
     conn.conn.send_to(
-        conn.last_packet.clone().bytes()?.to_slice(),
+        conn.last_packet.clone().to_bytes()?.to_slice(),
         &conn.addr,
     )?;
 

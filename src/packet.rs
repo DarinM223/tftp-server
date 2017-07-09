@@ -197,7 +197,7 @@ impl Packet {
     }
 
     /// Consumes the packet and returns the packet in byte representation.
-    pub fn bytes(self) -> Result<PacketData> {
+    pub fn to_bytes(self) -> Result<PacketData> {
         match self {
             Packet::RRQ { filename, mode } => rw_packet_bytes(OpCode::RRQ, filename, mode),
             Packet::WRQ { filename, mode } => rw_packet_bytes(OpCode::WRQ, filename, mode),
