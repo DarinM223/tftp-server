@@ -1,5 +1,6 @@
 use std::{fmt, mem, result, str};
 use std::io::Cursor;
+use std::io::Write;
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 
 #[derive(Debug)]
@@ -212,14 +213,6 @@ impl Packet {
     }
 }
 
-/// Splits a two byte unsigned integer into two one byte unsigned integers.
-fn split_into_bytes(num: u16) -> (u8, u8) {
-    let mut wtr = vec![];
-    wtr.write_u16::<BigEndian>(num).unwrap();
-
-    (wtr[0], wtr[1])
-}
-
 /// Merges two 1 byte unsigned integers into a two byte unsigned integer.
 fn merge_bytes(num1: u8, num2: u8) -> u16 {
     let mut rdr = Cursor::new(vec![num1, num2]);
@@ -302,56 +295,46 @@ fn rw_packet_bytes(packet: OpCode, filename: String, mode: String) -> Result<Pac
 
     let mut bytes = [0; MAX_PACKET_SIZE];
 
-    let (b1, b2) = split_into_bytes(packet as u16);
-    bytes[0] = b1;
-    bytes[1] = b2;
+    let leftover = {
+        let mut buf = &mut bytes[..];
 
-    let mut index = 2;
-    for byte in filename.bytes() {
-        bytes[index] = byte;
-        index += 1;
-    }
+        buf.write_u16::<BigEndian>(packet as u16).unwrap();
+        buf.write_all(filename.as_bytes());
+        buf.write(&[0]);
+        buf.write_all(mode.as_bytes());
+        buf.write(&[0]);
 
-    index += 1;
-    for byte in mode.bytes() {
-        bytes[index] = byte;
-        index += 1;
-    }
-    index += 1;
+        buf.len() - 1 // TODO: figure out why this is needed
+    };
 
-    Ok(PacketData::new(bytes, index))
+    Ok(PacketData::new(bytes, bytes[..].len() - leftover))
 }
 
 fn data_packet_bytes(block_num: u16, data: [u8; 512], data_len: usize) -> Result<PacketData> {
     let mut bytes = [0; MAX_PACKET_SIZE];
 
-    let (b1, b2) = split_into_bytes(OpCode::DATA as u16);
-    bytes[0] = b1;
-    bytes[1] = b2;
+    let leftover = {
+        let mut buf = &mut bytes[..];
 
-    let (b3, b4) = split_into_bytes(block_num);
-    bytes[2] = b3;
-    bytes[3] = b4;
+        buf.write_u16::<BigEndian>(OpCode::DATA as u16).unwrap();
+        buf.write_u16::<BigEndian>(block_num).unwrap();
+        buf.write_all(&data[0..data_len]);
 
-    let mut index = 4;
-    for i in 0..data_len {
-        bytes[index] = data[i];
-        index += 1;
-    }
+        buf.len()
+    };
 
-    Ok(PacketData::new(bytes, index))
+    Ok(PacketData::new(bytes, bytes[..].len() - leftover))
 }
 
 fn ack_packet_bytes(block_num: u16) -> Result<PacketData> {
     let mut bytes = [0; MAX_PACKET_SIZE];
 
-    let (b1, b2) = split_into_bytes(OpCode::ACK as u16);
-    bytes[0] = b1;
-    bytes[1] = b2;
+    {
+        let mut buf = &mut bytes[..];
 
-    let (b3, b4) = split_into_bytes(block_num);
-    bytes[2] = b3;
-    bytes[3] = b4;
+        buf.write_u16::<BigEndian>(OpCode::ACK as u16).unwrap();
+        buf.write_u16::<BigEndian>(block_num).unwrap();
+    }
 
     Ok(PacketData::new(bytes, 4))
 }
@@ -363,22 +346,18 @@ fn error_packet_bytes(code: ErrorCode, msg: String) -> Result<PacketData> {
 
     let mut bytes = [0; MAX_PACKET_SIZE];
 
-    let (b1, b2) = split_into_bytes(OpCode::ERROR as u16);
-    bytes[0] = b1;
-    bytes[1] = b2;
+    let leftover = {
+        let mut buf = &mut bytes[..];
 
-    let (b3, b4) = split_into_bytes(code as u16);
-    bytes[2] = b3;
-    bytes[3] = b4;
+        buf.write_u16::<BigEndian>(OpCode::ERROR as u16).unwrap();
+        buf.write_u16::<BigEndian>(code as u16).unwrap();
+        buf.write_all(msg.as_bytes());
+        buf.write(&[0]);
 
-    let mut index = 4;
-    for byte in msg.bytes() {
-        bytes[index] = byte;
-        index += 1;
-    }
-    index += 1;
+        buf.len()
+    };
 
-    Ok(PacketData::new(bytes, index))
+    Ok(PacketData::new(bytes, bytes[..].len() - leftover))
 }
 
 macro_rules! read_string {
