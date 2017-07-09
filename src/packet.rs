@@ -223,12 +223,6 @@ impl Packet {
     }
 }
 
-/// Merges two 1 byte unsigned integers into a two byte unsigned integer.
-fn merge_bytes(num1: u8, num2: u8) -> u16 {
-    let mut rdr = Cursor::new(vec![num1, num2]);
-    rdr.read_u16::<BigEndian>().unwrap()
-}
-
 /// Reads until the zero byte and returns a string containing the bytes read
 /// and the rest of the buffer, skipping the zero byte
 fn read_string(bytes: &[u8]) -> Result<(String, &[u8])> {
