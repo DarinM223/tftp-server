@@ -305,9 +305,9 @@ fn rw_packet_bytes(packet: OpCode, filename: String, mode: String) -> Result<Pac
 
         buf.write_u16::<BigEndian>(packet as u16)?;
         buf.write_all(filename.as_bytes())?;
-        buf.write(&[0])?;
+        buf.write_all(&[0])?;
         buf.write_all(mode.as_bytes())?;
-        buf.write(&[0])?;
+        buf.write_all(&[0])?;
 
         buf.len() - 1 // TODO: figure out why this is needed
     };
@@ -357,7 +357,7 @@ fn error_packet_bytes(code: ErrorCode, msg: String) -> Result<PacketData> {
         buf.write_u16::<BigEndian>(OpCode::ERROR as u16)?;
         buf.write_u16::<BigEndian>(code as u16)?;
         buf.write_all(msg.as_bytes())?;
-        buf.write(&[0])?;
+        buf.write_all(&[0])?;
 
         buf.len()
     };

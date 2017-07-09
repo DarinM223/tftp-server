@@ -418,7 +418,7 @@ fn handle_rrq_packet(
         mode
     );
 
-    if filename.contains("..") || filename.starts_with("/") {
+    if filename.contains("..") || filename.starts_with('/') {
         return Err(TftpError::TftpError(ErrorCode::FileNotFound, *addr));
     }
 
@@ -450,7 +450,7 @@ fn handle_wrq_packet(
         filename,
         mode
     );
-    if let Ok(_) = fs::metadata(&filename) {
+    if fs::metadata(&filename).is_ok() {
         return Err(TftpError::TftpError(ErrorCode::FileExists, *addr));
     }
     let file = File::create(filename)?;
@@ -503,7 +503,7 @@ fn handle_data_packet(
         return Ok(());
     }
 
-    conn.file.write(&data.0[0..len])?;
+    conn.file.write_all(&data.0[0..len])?;
 
     // Send ACK packet for data.
     conn.last_packet = Packet::ACK(conn.block_num);

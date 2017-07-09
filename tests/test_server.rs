@@ -176,7 +176,7 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
             } = reply_packet
             {
                 assert_eq!(client_block_num, block_num);
-                file.write(&data.0[0..len])?;
+                file.write_all(&data.0[0..len])?;
 
                 let ack_packet = Packet::ACK(client_block_num);
                 socket.send_to(ack_packet.to_bytes()?.to_slice(), &src)?;
