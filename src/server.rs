@@ -113,7 +113,7 @@ impl TftpServer {
         poll.register(
             &socket,
             SERVER,
-            Ready::all(),
+            Ready::readable() | Ready::writable(),
             PollOpt::edge(),
         )?;
         poll.register(
@@ -140,7 +140,7 @@ impl TftpServer {
         poll.register(
             &socket,
             SERVER,
-            Ready::all(),
+            Ready::readable() | Ready::writable(),
             PollOpt::edge(),
         )?;
         poll.register(
@@ -212,7 +212,7 @@ impl TftpServer {
         self.poll.register(
             &socket,
             token,
-            Ready::all(),
+            Ready::readable() | Ready::writable(),
             PollOpt::edge(),
         )?;
         info!("Created connection with token: {:?}", token);
