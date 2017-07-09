@@ -231,20 +231,14 @@ fn merge_bytes(num1: u8, num2: u8) -> u16 {
 /// Reads bytes from the packet bytes starting from the given index
 /// until the zero byte and returns a string containing the bytes read.
 fn read_string(bytes: &PacketData, start: usize) -> Result<(String, usize)> {
-    let mut result_bytes = Vec::new();
-    let mut counter = start;
-    while bytes.bytes[counter] != 0 {
-        result_bytes.push(bytes.bytes[counter]);
-
-        counter += 1;
-        if counter >= bytes.len {
-            return Err(PacketErr::StrOutOfBounds);
-        }
+    let result_bytes = bytes.bytes[start..bytes.len].iter().take_while(|c| **c != 0).cloned().collect::<Vec<u8>>();
+    // TODO: add test for error condition below
+    if result_bytes.len() == bytes.len - start {
+        return Err(PacketErr::StrOutOfBounds);
     }
-    counter += 1;
 
     let result_str = str::from_utf8(result_bytes.as_slice())?.to_string();
-    Ok((result_str, counter))
+    Ok((result_str, start + result_bytes.len() + 1))
 }
 
 fn read_rw_packet(code: OpCode, bytes: PacketData) -> Result<Packet> {
