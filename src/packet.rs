@@ -185,13 +185,14 @@ pub enum Packet {
 
 impl Packet {
     /// Creates and returns a packet parsed from its byte representation.
-    pub fn read(bytes: PacketData) -> Result<Packet> {
-        let opcode = OpCode::from_u16(merge_bytes(bytes.bytes[0], bytes.bytes[1]))?;
+    pub fn read(pack_data: PacketData) -> Result<Packet> {
+        let mut bytes = &pack_data.bytes[..pack_data.len];
+        let opcode = OpCode::from_u16(bytes.read_u16::<BigEndian>().unwrap())?;
         match opcode {
-            OpCode::RRQ | OpCode::WRQ => read_rw_packet(opcode, bytes),
-            OpCode::DATA => read_data_packet(bytes),
-            OpCode::ACK => read_ack_packet(bytes),
-            OpCode::ERROR => read_error_packet(bytes),
+            OpCode::RRQ | OpCode::WRQ => read_rw_packet(opcode, &bytes),
+            OpCode::DATA => read_data_packet(&bytes),
+            OpCode::ACK => read_ack_packet(&bytes),
+            OpCode::ERROR => read_error_packet(&bytes),
         }
     }
 
@@ -228,22 +229,24 @@ fn merge_bytes(num1: u8, num2: u8) -> u16 {
     rdr.read_u16::<BigEndian>().unwrap()
 }
 
-/// Reads bytes from the packet bytes starting from the given index
-/// until the zero byte and returns a string containing the bytes read.
-fn read_string(bytes: &PacketData, start: usize) -> Result<(String, usize)> {
-    let result_bytes = bytes.bytes[start..bytes.len].iter().take_while(|c| **c != 0).cloned().collect::<Vec<u8>>();
+/// Reads until the zero byte and returns a string containing the bytes read
+/// and the rest of the buffer, skipping the zero byte
+fn read_string(bytes: &[u8]) -> Result<(String, &[u8])> {
+    let result_bytes = bytes.iter().take_while(|c| **c != 0).cloned().collect::<Vec<u8>>();
     // TODO: add test for error condition below
-    if result_bytes.len() == bytes.len - start {
+    if result_bytes.len() == bytes.len() {
+        // reading didn't stop on a zero byte
         return Err(PacketErr::StrOutOfBounds);
     }
 
     let result_str = str::from_utf8(result_bytes.as_slice())?.to_string();
-    Ok((result_str, start + result_bytes.len() + 1))
+    let (_,tail) = bytes.split_at(result_bytes.len() + 1 /* +1 so we skip the \0 byte*/);
+    Ok((result_str, tail))
 }
 
-fn read_rw_packet(code: OpCode, bytes: PacketData) -> Result<Packet> {
-    let (filename, end_pos) = read_string(&bytes, 2)?;
-    let (mode, _) = read_string(&bytes, end_pos)?;
+fn read_rw_packet(code: OpCode, mut bytes: &[u8]) -> Result<Packet> {
+    let (filename, rest) = read_string(&bytes)?;
+    let (mode, _) = read_string(&rest)?;
 
     match code {
         OpCode::RRQ => {
@@ -262,28 +265,27 @@ fn read_rw_packet(code: OpCode, bytes: PacketData) -> Result<Packet> {
     }
 }
 
-fn read_data_packet(bytes: PacketData) -> Result<Packet> {
-    let block_num = merge_bytes(bytes.bytes[2], bytes.bytes[3]);
+fn read_data_packet(mut bytes: &[u8]) -> Result<Packet> {
+    let block_num = bytes.read_u16::<BigEndian>().unwrap();
     let mut data = [0; 512];
-    for i in 0..512 {
-        data[i] = bytes.bytes[i + 4];
-    }
+    // TODO: test with longer packets
+    let len = (&mut data[..]).write(bytes).unwrap();
 
     Ok(Packet::DATA {
         block_num: block_num,
         data: DataBytes(data),
-        len: bytes.len - 4,
+        len: len,
     })
 }
 
-fn read_ack_packet(bytes: PacketData) -> Result<Packet> {
-    let block_num = merge_bytes(bytes.bytes[2], bytes.bytes[3]);
+fn read_ack_packet(mut bytes: &[u8]) -> Result<Packet> {
+    let block_num = bytes.read_u16::<BigEndian>().unwrap();
     Ok(Packet::ACK(block_num))
 }
 
-fn read_error_packet(bytes: PacketData) -> Result<Packet> {
-    let error_code = ErrorCode::from_u16(merge_bytes(bytes.bytes[2], bytes.bytes[3]))?;
-    let (msg, _) = read_string(&bytes, 4)?;
+fn read_error_packet(mut bytes: &[u8]) -> Result<Packet> {
+    let error_code = ErrorCode::from_u16(bytes.read_u16::<BigEndian>().unwrap())?;
+    let (msg, _) = read_string(&bytes)?;
 
     Ok(Packet::ERROR {
         code: error_code,
@@ -373,11 +375,11 @@ macro_rules! read_string {
                 bytes[i] = seed_bytes[i] as u8;
             }
 
-            let result = read_string(&PacketData::new(bytes, seed_bytes.len()), $start_pos);
+            let result = read_string(&bytes[$start_pos..seed_bytes.len()]);
             assert!(result.is_ok());
-            let _ = result.map(|(string, end_pos)| {
+            let _ = result.map(|(string, rest)| {
                 assert_eq!(string, $string);
-                assert_eq!(end_pos, $end_pos);
+                assert_eq!(seed_bytes.len() - rest.len(), $end_pos);
             });
         }
     };
