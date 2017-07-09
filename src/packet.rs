@@ -1,5 +1,4 @@
-use std::{fmt, mem, result, str};
-use std::io::Cursor;
+use std::{fmt, result, str};
 use std::io::Write;
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 
@@ -238,7 +237,7 @@ fn read_string(bytes: &[u8]) -> Result<(String, &[u8])> {
     Ok((result_str, tail))
 }
 
-fn read_rw_packet(code: OpCode, mut bytes: &[u8]) -> Result<Packet> {
+fn read_rw_packet(code: OpCode, bytes: &[u8]) -> Result<Packet> {
     let (filename, rest) = read_string(&bytes)?;
     let (mode, _) = read_string(&rest)?;
 
