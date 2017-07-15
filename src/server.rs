@@ -1,5 +1,5 @@
 use mio::*;
-use mio::timer::{Timer, TimerError, Timeout};
+use mio_more::timer::{Timer, TimerError, Timeout};
 use mio::udp::UdpSocket;
 use packet::{ErrorCode, MAX_PACKET_SIZE, DataBytes, Packet, PacketData, PacketErr};
 use rand;
