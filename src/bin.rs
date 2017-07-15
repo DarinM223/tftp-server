@@ -1,5 +1,6 @@
 extern crate env_logger;
 extern crate tftp_server;
+extern crate clap;
 
 use tftp_server::server::TftpServer;
 use std::env;
