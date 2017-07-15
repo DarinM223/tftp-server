@@ -4,7 +4,7 @@ use mio::udp::UdpSocket;
 use packet::{ErrorCode, MAX_PACKET_SIZE, DataBytes, Packet, PacketData, PacketErr};
 use rand;
 use rand::Rng;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::fs::File;
 use std::io;
@@ -368,34 +368,27 @@ impl TftpServer {
 /// The range of valid ports is from 0 to 65535 and if the function
 /// cannot find a open port within 100 different random ports it returns an error.
 pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
-    let mut num_failures = 0;
-    let mut past_ports = HashMap::new();
-    loop {
+    let mut past_ports = HashSet::new();
+    for _ in 0..100 {
         let port = rand::thread_rng().gen_range(0, 65535);
         // Ignore ports that already failed.
-        if past_ports.get(&port).is_some() {
+        if past_ports.contains(&port) {
             continue;
         }
 
         let addr = format!("127.0.0.1:{}", port);
         let socket_addr = SocketAddr::from_str(addr.as_str()).expect("Error parsing address");
-        match net::UdpSocket::bind(&socket_addr) {
-            Ok(socket) => {
-                if let Some(timeout) = timeout {
-                    socket.set_read_timeout(Some(timeout))?;
-                    socket.set_write_timeout(Some(timeout))?;
-                }
-                return Ok(socket);
+        if let Ok(socket) =  net::UdpSocket::bind(&socket_addr) {
+            if let Some(timeout) = timeout {
+                socket.set_read_timeout(Some(timeout))?;
+                socket.set_write_timeout(Some(timeout))?;
             }
-            Err(_) => {
-                past_ports.insert(port, true);
-                num_failures += 1;
-                if num_failures > 100 {
-                    return Err(TftpError::NoOpenSocket);
-                }
-            }
+            return Ok(socket);
         }
+        past_ports.insert(port);
     }
+
+    Err(TftpError::NoOpenSocket)
 }
 
 /// Increments the block number and handles wraparound to 0 instead of overflow.
