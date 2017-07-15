@@ -311,6 +311,7 @@ impl TftpServer {
     /// or from a timeout timer for a connection.
     pub fn handle_token(&mut self, token: Token) -> Result<()> {
         match token {
+            TIMER => self.handle_timer()?,
             SERVER => {
                 match self.handle_server_packet() {
                     Err(TftpError::NoneFromSocket) => {}
@@ -321,8 +322,7 @@ impl TftpServer {
                     _ => {}
                 }
             }
-            TIMER => self.handle_timer()?,
-            token if self.connections.get(&token).is_some() => {
+            _ => {
                 match self.handle_connection_packet(token) {
                     Err(TftpError::CloseConnection) => {}
                     Err(TftpError::NoneFromSocket) => return Ok(()),
@@ -340,7 +340,6 @@ impl TftpServer {
                 self.cancel_connection(&token)?;
                 return Ok(());
             }
-            _ => unreachable!(),
         }
 
         Ok(())
