@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 use std::thread;
 use std::time::Duration;
 use tftp_server::packet::{ErrorCode, DataBytes, Packet, PacketData, MAX_PACKET_SIZE};
-use tftp_server::server::{create_socket, incr_block_num, Result, TftpServer};
+use tftp_server::server::{create_socket, Result, TftpServer};
 
 const TIMEOUT: u64 = 3;
 
@@ -123,7 +123,7 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
             let reply_packet = Packet::read(PacketData::new(reply_buf, amt))?;
 
             assert_eq!(reply_packet, Packet::ACK(block_num));
-            incr_block_num(&mut block_num);
+            block_num = block_num.wrapping_add(1);
 
             // Read and send data packet
             let mut buf = [0; 512];
@@ -181,7 +181,7 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
                 let ack_packet = Packet::ACK(client_block_num);
                 socket.send_to(ack_packet.to_bytes()?.to_slice(), &src)?;
 
-                incr_block_num(&mut client_block_num);
+                client_block_num = client_block_num.wrapping_add(1);
 
                 if len < 512 {
                     break;

@@ -389,15 +389,6 @@ pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
     Err(TftpError::NoOpenSocket)
 }
 
-/// Increments the block number and handles wraparound to 0 instead of overflow.
-pub fn incr_block_num(block_num: &mut u16) {
-    if *block_num == u16::MAX - 1 {
-        *block_num = 0;
-    } else {
-        *block_num += 1;
-    }
-}
-
 fn handle_rrq_packet(
     filename: String,
     mode: String,
@@ -459,7 +450,7 @@ fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> Result<()> {
         return Ok(());
     }
 
-    incr_block_num(&mut conn.block_num);
+    conn.block_num = conn.block_num.wrapping_add(1);
     let mut buf = [0; 512];
     let amount = conn.file.read(&mut buf)?;
 
@@ -489,7 +480,7 @@ fn handle_data_packet(
 ) -> Result<()> {
     info!("Received data with block number {}", block_num);
 
-    incr_block_num(&mut conn.block_num);
+    conn.block_num = conn.block_num.wrapping_add(1);
     if block_num != conn.block_num {
         return Ok(());
     }
