@@ -368,11 +368,10 @@ impl TftpServer {
 /// The range of valid ports is from 0 to 65535 and if the function
 /// cannot find a open port within 100 different random ports it returns an error.
 pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
-    let mut past_ports = HashSet::new();
+    let mut failed_ports = HashSet::new();
     for _ in 0..100 {
         let port = rand::thread_rng().gen_range(0, 65535);
-        // Ignore ports that already failed.
-        if past_ports.contains(&port) {
+        if failed_ports.contains(&port) {
             continue;
         }
 
@@ -385,7 +384,7 @@ pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
             }
             return Ok(socket);
         }
-        past_ports.insert(port);
+        failed_ports.insert(port);
     }
 
     Err(TftpError::NoOpenSocket)
