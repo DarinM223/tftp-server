@@ -190,19 +190,12 @@ impl TftpServer {
     /// Handles a packet sent to the main server connection.
     /// It opens a new UDP connection in a random port and replies with either an ACK
     /// or a DATA packet depending on the whether it received an RRQ or a WRQ packet.
-    fn handle_server_packet(&mut self) -> Result<()> {
-        let mut buf = [0; MAX_PACKET_SIZE];
-        let (amt, src) = match self.socket.recv_from(&mut buf)? {
-            Some((amt, src)) => (amt, src),
-            None => return Err(TftpError::NoneFromSocket),
-        };
-        let packet = Packet::read(PacketData::new(buf, amt))?;
-
+    fn handle_server_packet(&mut self, packet: Packet, src: &SocketAddr) -> Result<()> {
         // Handle the RRQ or WRQ packet.
         let (file, block_num, send_packet) = match packet {
-            Packet::RRQ { filename, mode } => handle_rrq_packet(filename, mode, &src)?,
-            Packet::WRQ { filename, mode } => handle_wrq_packet(filename, mode, &src)?,
-            _ => return Err(TftpError::TftpError(ErrorCode::IllegalTFTP, src)),
+            Packet::RRQ { filename, mode } => handle_rrq_packet(filename, mode, src)?,
+            Packet::WRQ { filename, mode } => handle_wrq_packet(filename, mode, src)?,
+            _ => return Err(TftpError::TftpError(ErrorCode::IllegalTFTP, *src)),
         };
 
         // Create new connection.
@@ -219,7 +212,7 @@ impl TftpServer {
 
         socket.send_to(
             send_packet.clone().to_bytes()?.to_slice(),
-            &src,
+            src,
         )?;
         self.connections.insert(
             token,
@@ -229,7 +222,7 @@ impl TftpServer {
                 timeout: timeout,
                 block_num: block_num,
                 last_packet: send_packet,
-                addr: src,
+                addr: *src,
             },
         );
 
@@ -260,15 +253,8 @@ impl TftpServer {
     }
 
     /// Handles a packet sent to an open child connection.
-    fn handle_connection_packet(&mut self, token: Token) -> Result<()> {
+    fn handle_connection_packet(&mut self, packet: Packet, token: Token) -> Result<()> {
         if let Some(ref mut conn) = self.connections.get_mut(&token) {
-            let mut buf = [0; MAX_PACKET_SIZE];
-            let amt = match conn.conn.recv_from(&mut buf)? {
-                Some((amt, _)) => amt,
-                None => return Err(TftpError::NoneFromSocket),
-            };
-            let packet = Packet::read(PacketData::new(buf, amt))?;
-
             match packet {
                 Packet::ACK(block_num) => handle_ack_packet(block_num, conn)?,
                 Packet::DATA {
@@ -310,11 +296,17 @@ impl TftpServer {
     /// is a token that can either be from the server, from an open connection,
     /// or from a timeout timer for a connection.
     pub fn handle_token(&mut self, token: Token) -> Result<()> {
+        let mut buf = [0; MAX_PACKET_SIZE];
         match token {
             TIMER => self.handle_timer()?,
             SERVER => {
-                match self.handle_server_packet() {
-                    Err(TftpError::NoneFromSocket) => {}
+                let (amt, src) = match self.socket.recv_from(&mut buf)? {
+                    Some((amt, src)) => (amt, src),
+                    None => return Ok(()),
+                };
+                let packet = Packet::read(PacketData::new(buf, amt))?;
+
+                match self.handle_server_packet(packet, &src) {
                     Err(TftpError::TftpError(code, addr)) => {
                         self.handle_error(&token, code, &addr)?
                     }
@@ -323,7 +315,17 @@ impl TftpServer {
                 }
             }
             _ => {
-                match self.handle_connection_packet(token) {
+                let packet;
+                {
+                    let mut conn = self.connections.get_mut(&token).unwrap();
+                    let amt = match conn.conn.recv_from(&mut buf)? {
+                        Some((amt, _)) => amt,
+                        None => return Ok(()),
+                    };
+                    packet = Packet::read(PacketData::new(buf, amt))?;
+                }
+
+                match self.handle_connection_packet(packet, token) {
                     Err(TftpError::CloseConnection) => {}
                     Err(TftpError::NoneFromSocket) => return Ok(()),
                     Err(TftpError::TftpError(code, addr)) => {
