@@ -38,6 +38,9 @@ pub enum TftpError {
     /// Error signalling that a received packed did not match
     /// the current expected block number
     BlockNoMismatch,
+    /// Error returned when a read connection receives a DATA packet
+    /// or a write connection receives an ACK
+    WrongPacketType,
 }
 
 impl From<io::Error> for TftpError {
@@ -60,18 +63,47 @@ impl From<TimerError> for TftpError {
 
 pub type Result<T> = result::Result<T, TftpError>;
 
+trait IOAdapter {
+    type R: Read + Sized;
+    type W: Write + Sized;
+    fn open_read(filename: String) -> io::Result<Self::R>;
+    fn create_new(filename: String) -> io::Result<Self::W>;
+}
+
+struct FSAdapter;
+
+impl IOAdapter for FSAdapter {
+    type R = File;
+    type W = File;
+    fn open_read(filename: String) -> io::Result<File> {
+        File::open(filename)
+    }
+    fn create_new(filename: String) -> io::Result<File> {
+        fs::OpenOptions::new().write(true).create_new(true).open(
+            filename,
+        )
+    }
+}
+
+type ConnectionState = ConnectionStateImpl<FSAdapter>;
+
+enum RW<IO: IOAdapter> {
+    R(IO::R),
+    W(IO::W),
+}
+
 /// The state contained within a connection.
 /// A connection is started when a server socket receives
 /// a RRQ or a WRQ packet and ends when the connection socket
 /// receives a DATA packet less than 516 bytes or if the connection
 /// socket receives an invalid packet.
-struct ConnectionState {
+struct ConnectionStateImpl<IO: IOAdapter> {
     /// The UDP socket for the connection that receives ACK, DATA, or ERROR packets.
     conn: UdpSocket,
     /// The open file either being written to or read from during the transfer.
     /// If the connection was started with a RRQ, the file would be read from, if it
     /// was started with a WRQ, the file would be written to.
-    file: File,
+    file: RW<IO>,
     /// The timeout for the last packet. Every time a new packet is received, the
     /// timeout is reset.
     timeout: Timeout,
@@ -191,9 +223,9 @@ impl TftpServer {
         src: &SocketAddr,
     ) -> Result<(Packet, Token)> {
         // Handle the RRQ or WRQ packet.
-        let (file, block_num, send_packet) = match packet {
-            Packet::RRQ { filename, mode } => handle_rrq_packet(filename, mode, src)?,
-            Packet::WRQ { filename, mode } => handle_wrq_packet(filename, mode, src)?,
+        let (io_handle, block_num, send_packet) = match packet {
+            Packet::RRQ { filename, mode } => ConnectionState::new_from_rrq(filename, mode, src)?,
+            Packet::WRQ { filename, mode } => ConnectionState::new_from_wrq(filename, mode, src)?,
             _ => return Err(TftpError::TftpError(ErrorCode::IllegalTFTP, *src)),
         };
 
@@ -213,7 +245,7 @@ impl TftpServer {
             token,
             ConnectionState {
                 conn: socket,
-                file: file,
+                file: io_handle,
                 timeout: timeout,
                 block_num: block_num,
                 last_packet: send_packet.clone(),
@@ -254,12 +286,12 @@ impl TftpServer {
     fn handle_connection_packet(&mut self, packet: Packet, token: Token) -> Result<Packet> {
         if let Some(ref mut conn) = self.connections.get_mut(&token) {
             match packet {
-                Packet::ACK(block_num) => Ok(handle_ack_packet(block_num, conn)?),
+                Packet::ACK(block_num) => Ok(conn.handle_ack_packet(block_num)?),
                 Packet::DATA {
                     block_num,
                     data,
                     len,
-                } => Ok(handle_data_packet(block_num, data, len, conn)?),
+                } => Ok(conn.handle_data_packet(block_num, data, len)?),
                 Packet::ERROR { code, msg } => {
                     error!("Error message received with code {:?}: {:?}", code, msg);
                     Err(TftpError::TftpError(code, conn.addr))
@@ -399,11 +431,12 @@ pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
     Err(TftpError::NoOpenSocket)
 }
 
-fn handle_rrq_packet(
+impl<IO: IOAdapter> ConnectionStateImpl<IO> {
+fn new_from_rrq(
     filename: String,
     mode: String,
     addr: &SocketAddr,
-) -> Result<(File, u16, Packet)> {
+) -> Result<(RW<IO>, u16, Packet)> {
     info!(
         "Received RRQ packet with filename {} and mode {}",
         filename,
@@ -414,7 +447,7 @@ fn handle_rrq_packet(
         return Err(TftpError::TftpError(ErrorCode::FileNotFound, *addr));
     }
 
-    let mut file = File::open(filename).map_err(|_| {
+    let mut file = IO::open_read(filename).map_err(|_| {
         TftpError::TftpError(ErrorCode::FileNotFound, *addr)
     })?;
     let block_num = 1;
@@ -429,75 +462,82 @@ fn handle_rrq_packet(
         len: amount,
     };
 
-    Ok((file, block_num, last_packet))
+    Ok((RW::R(file), block_num, last_packet))
 }
 
-fn handle_wrq_packet(
+fn new_from_wrq(
     filename: String,
     mode: String,
     addr: &SocketAddr,
-) -> Result<(File, u16, Packet)> {
+) -> Result<(RW<IO>, u16, Packet)> {
     info!(
         "Received WRQ packet with filename {} and mode {}",
         filename,
         mode
     );
-    if fs::metadata(&filename).is_ok() {
-        return Err(TftpError::TftpError(ErrorCode::FileExists, *addr));
-    }
-    let file = File::create(filename)?;
+    let file = IO::create_new(filename).map_err(|e| match e.kind() {
+        io::ErrorKind::AlreadyExists => TftpError::TftpError(ErrorCode::FileExists, *addr),
+        _ => e.into(),
+    })?;
     let block_num = 0;
 
     // Reply with ACK with a block number of 0.
     let last_packet = Packet::ACK(block_num);
 
-    Ok((file, block_num, last_packet))
+    Ok((RW::W(file), block_num, last_packet))
 }
 
-fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> Result<Packet> {
+fn handle_ack_packet(&mut self, block_num: u16) -> Result<Packet> {
     info!("Received ACK with block number {}", block_num);
-    if block_num != conn.block_num {
+    if block_num != self.block_num {
         return Err(TftpError::BlockNoMismatch);
     }
 
-    conn.block_num = conn.block_num.wrapping_add(1);
+    self.block_num = self.block_num.wrapping_add(1);
     let mut buf = [0; 512];
-    let amount = conn.file.read(&mut buf)?;
+    let amount = match self.file {
+        RW::R(ref mut r) => r.read(&mut buf)?,
+        _ => return Err(TftpError::WrongPacketType),
+    };
 
     // Send next data packet.
-    conn.last_packet = Packet::DATA {
-        block_num: conn.block_num,
+    self.last_packet = Packet::DATA {
+        block_num: self.block_num,
         data: DataBytes(buf),
         len: amount,
     };
 
     if amount < 512 {
-        conn.dallying = true;
+        self.dallying = true;
     }
 
-    Ok(conn.last_packet.clone())
+    Ok(self.last_packet.clone())
 }
 
 fn handle_data_packet(
+    &mut self,
     block_num: u16,
     data: DataBytes,
     len: usize,
-    conn: &mut ConnectionState,
 ) -> Result<Packet> {
     info!("Received data with block number {}", block_num);
 
-    conn.block_num = conn.block_num.wrapping_add(1);
-    if block_num != conn.block_num {
+    self.block_num = self.block_num.wrapping_add(1);
+    if block_num != self.block_num {
         return Err(TftpError::BlockNoMismatch);
     }
 
-    conn.file.write_all(&data.0[0..len])?;
-
-    conn.last_packet = Packet::ACK(conn.block_num);
-
-    if len < 512 {
-        conn.dallying = true;
+    match self.file {
+        RW::W(ref mut w) => w.write_all(&data.0[0..len])?,
+        _ => return Err(TftpError::WrongPacketType),
     }
 
-    Ok(conn.last_packet.clone())
+    self.last_packet = Packet::ACK(self.block_num);
+
+    if len < 512 {
+        self.dallying = true;
+    }
+
+    Ok(self.last_packet.clone())
+}
 }
