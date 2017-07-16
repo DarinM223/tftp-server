@@ -378,7 +378,7 @@ pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
 
         let addr = format!("127.0.0.1:{}", port);
         let socket_addr = SocketAddr::from_str(addr.as_str()).expect("Error parsing address");
-        if let Ok(socket) =  net::UdpSocket::bind(&socket_addr) {
+        if let Ok(socket) = net::UdpSocket::bind(&socket_addr) {
             if let Some(timeout) = timeout {
                 socket.set_read_timeout(Some(timeout))?;
                 socket.set_write_timeout(Some(timeout))?;

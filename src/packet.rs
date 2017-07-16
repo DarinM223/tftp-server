@@ -232,7 +232,11 @@ impl Packet {
 /// Reads until the zero byte and returns a string containing the bytes read
 /// and the rest of the buffer, skipping the zero byte
 fn read_string(bytes: &[u8]) -> Result<(String, &[u8])> {
-    let result_bytes = bytes.iter().take_while(|c| **c != 0).cloned().collect::<Vec<u8>>();
+    let result_bytes = bytes
+        .iter()
+        .take_while(|c| **c != 0)
+        .cloned()
+        .collect::<Vec<u8>>();
     // TODO: add test for error condition below
     if result_bytes.len() == bytes.len() {
         // reading didn't stop on a zero byte
@@ -240,7 +244,7 @@ fn read_string(bytes: &[u8]) -> Result<(String, &[u8])> {
     }
 
     let result_str = str::from_utf8(result_bytes.as_slice())?.to_string();
-    let (_,tail) = bytes.split_at(result_bytes.len() + 1 /* +1 so we skip the \0 byte*/);
+    let (_, tail) = bytes.split_at(result_bytes.len() + 1 /* +1 so we skip the \0 byte*/);
     Ok((result_str, tail))
 }
 
