@@ -236,7 +236,7 @@ impl TftpServer {
 
         for token in tokens {
             if Some(true) == self.connections.get(&token).map(|conn| conn.dallying) {
-                self.cancel_connection(&token);
+                self.cancel_connection(&token)?;
             } else if let Some(ref mut conn) = self.connections.get_mut(&token) {
                 info!("Timeout: resending last packet for token: {:?}", token);
                 conn.conn.send_to(
