@@ -15,7 +15,6 @@ The first way allows you to run the server without specifying a port. The server
 ```
 $ ./target/debug/tftp_server_bin
 Server created at address: V4(127.0.0.1:61204)
-Getting None when receiving from server socket
 ```
 
 In this example, the port number picked was 61204.
@@ -24,7 +23,6 @@ The second way allows you to choose an open port for the server to run on. You s
 
 ```
 $ ./target/debug/tftp_server_bin 61204
-Getting None when receiving from server socket
 ```
 
 If the port is already taken or there is an error using the port, the server will panic with an IoError.
