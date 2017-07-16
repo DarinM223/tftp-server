@@ -450,6 +450,11 @@ fn handle_wrq_packet(
         filename,
         mode
     );
+
+    if filename.contains("..") || filename.starts_with('/') {
+        return Err(TftpError::TftpError(ErrorCode::FileNotFound, *addr));
+    }
+
     if fs::metadata(&filename).is_ok() {
         return Err(TftpError::TftpError(ErrorCode::FileExists, *addr));
     }
