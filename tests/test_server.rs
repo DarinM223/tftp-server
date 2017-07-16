@@ -62,6 +62,9 @@ fn timeout_test(server_addr: &SocketAddr) -> Result<()> {
 }
 
 fn wrq_initial_ack_test(server_addr: &SocketAddr) -> Result<()> {
+    // remore file if it was left over after a test that panicked
+    let _ = fs::remove_file("./hello.txt");
+
     let input = Packet::WRQ {
         filename: "hello.txt".to_string(),
         mode: "octet".to_string(),
@@ -105,6 +108,9 @@ fn rrq_initial_data_test(server_addr: &SocketAddr) -> Result<()> {
 }
 
 fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
+    // remore file if it was left over after a test that panicked
+    let _ = fs::remove_file("./hello.txt");
+
     let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
     let init_packet = Packet::WRQ {
         filename: "hello.txt".to_string(),
