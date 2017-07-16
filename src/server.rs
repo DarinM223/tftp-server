@@ -432,112 +432,112 @@ pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
 }
 
 impl<IO: IOAdapter> ConnectionStateImpl<IO> {
-fn new_from_rrq(
-    filename: String,
-    mode: String,
-    addr: &SocketAddr,
-) -> Result<(RW<IO>, u16, Packet)> {
-    info!(
-        "Received RRQ packet with filename {} and mode {}",
-        filename,
-        mode
-    );
+    fn new_from_rrq(
+        filename: String,
+        mode: String,
+        addr: &SocketAddr,
+    ) -> Result<(RW<IO>, u16, Packet)> {
+        info!(
+            "Received RRQ packet with filename {} and mode {}",
+            filename,
+            mode
+        );
 
-    if filename.contains("..") || filename.starts_with('/') {
-        return Err(TftpError::TftpError(ErrorCode::FileNotFound, *addr));
+        if filename.contains("..") || filename.starts_with('/') {
+            return Err(TftpError::TftpError(ErrorCode::FileNotFound, *addr));
+        }
+
+        let mut file = IO::open_read(filename).map_err(|_| {
+            TftpError::TftpError(ErrorCode::FileNotFound, *addr)
+        })?;
+        let block_num = 1;
+
+        let mut buf = [0; 512];
+        let amount = file.read(&mut buf)?;
+
+        // Reply with first data packet with a block number of 1.
+        let last_packet = Packet::DATA {
+            block_num: block_num,
+            data: DataBytes(buf),
+            len: amount,
+        };
+
+        Ok((RW::R(file), block_num, last_packet))
     }
 
-    let mut file = IO::open_read(filename).map_err(|_| {
-        TftpError::TftpError(ErrorCode::FileNotFound, *addr)
-    })?;
-    let block_num = 1;
+    fn new_from_wrq(
+        filename: String,
+        mode: String,
+        addr: &SocketAddr,
+    ) -> Result<(RW<IO>, u16, Packet)> {
+        info!(
+            "Received WRQ packet with filename {} and mode {}",
+            filename,
+            mode
+        );
+        let file = IO::create_new(filename).map_err(|e| match e.kind() {
+            io::ErrorKind::AlreadyExists => TftpError::TftpError(ErrorCode::FileExists, *addr),
+            _ => e.into(),
+        })?;
+        let block_num = 0;
 
-    let mut buf = [0; 512];
-    let amount = file.read(&mut buf)?;
+        // Reply with ACK with a block number of 0.
+        let last_packet = Packet::ACK(block_num);
 
-    // Reply with first data packet with a block number of 1.
-    let last_packet = Packet::DATA {
-        block_num: block_num,
-        data: DataBytes(buf),
-        len: amount,
-    };
-
-    Ok((RW::R(file), block_num, last_packet))
-}
-
-fn new_from_wrq(
-    filename: String,
-    mode: String,
-    addr: &SocketAddr,
-) -> Result<(RW<IO>, u16, Packet)> {
-    info!(
-        "Received WRQ packet with filename {} and mode {}",
-        filename,
-        mode
-    );
-    let file = IO::create_new(filename).map_err(|e| match e.kind() {
-        io::ErrorKind::AlreadyExists => TftpError::TftpError(ErrorCode::FileExists, *addr),
-        _ => e.into(),
-    })?;
-    let block_num = 0;
-
-    // Reply with ACK with a block number of 0.
-    let last_packet = Packet::ACK(block_num);
-
-    Ok((RW::W(file), block_num, last_packet))
-}
-
-fn handle_ack_packet(&mut self, block_num: u16) -> Result<Packet> {
-    info!("Received ACK with block number {}", block_num);
-    if block_num != self.block_num {
-        return Err(TftpError::BlockNoMismatch);
+        Ok((RW::W(file), block_num, last_packet))
     }
 
-    self.block_num = self.block_num.wrapping_add(1);
-    let mut buf = [0; 512];
-    let amount = match self.file {
-        RW::R(ref mut r) => r.read(&mut buf)?,
-        _ => return Err(TftpError::WrongPacketType),
-    };
+    fn handle_ack_packet(&mut self, block_num: u16) -> Result<Packet> {
+        info!("Received ACK with block number {}", block_num);
+        if block_num != self.block_num {
+            return Err(TftpError::BlockNoMismatch);
+        }
 
-    // Send next data packet.
-    self.last_packet = Packet::DATA {
-        block_num: self.block_num,
-        data: DataBytes(buf),
-        len: amount,
-    };
+        self.block_num = self.block_num.wrapping_add(1);
+        let mut buf = [0; 512];
+        let amount = match self.file {
+            RW::R(ref mut r) => r.read(&mut buf)?,
+            _ => return Err(TftpError::WrongPacketType),
+        };
 
-    if amount < 512 {
-        self.dallying = true;
+        // Send next data packet.
+        self.last_packet = Packet::DATA {
+            block_num: self.block_num,
+            data: DataBytes(buf),
+            len: amount,
+        };
+
+        if amount < 512 {
+            self.dallying = true;
+        }
+
+        Ok(self.last_packet.clone())
     }
 
-    Ok(self.last_packet.clone())
-}
+    fn handle_data_packet(
+        &mut self,
+        block_num: u16,
+        data: DataBytes,
+        len: usize,
+    ) -> Result<Packet> {
+        info!("Received data with block number {}", block_num);
 
-fn handle_data_packet(
-    &mut self,
-    block_num: u16,
-    data: DataBytes,
-    len: usize,
-) -> Result<Packet> {
-    info!("Received data with block number {}", block_num);
+        self.block_num = self.block_num.wrapping_add(1);
+        if block_num != self.block_num {
+            return Err(TftpError::BlockNoMismatch);
+        }
 
-    self.block_num = self.block_num.wrapping_add(1);
-    if block_num != self.block_num {
-        return Err(TftpError::BlockNoMismatch);
+        match self.file {
+            RW::W(ref mut w) => w.write_all(&data.0[0..len])?,
+            _ => return Err(TftpError::WrongPacketType),
+        }
+
+        self.last_packet = Packet::ACK(self.block_num);
+
+        if len < 512 {
+            self.dallying = true;
+        }
+
+        Ok(self.last_packet.clone())
     }
-
-    match self.file {
-        RW::W(ref mut w) => w.write_all(&data.0[0..len])?,
-        _ => return Err(TftpError::WrongPacketType),
-    }
-
-    self.last_packet = Packet::ACK(self.block_num);
-
-    if len < 512 {
-        self.dallying = true;
-    }
-
-    Ok(self.last_packet.clone())
-}
 }
