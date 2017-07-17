@@ -63,14 +63,14 @@ impl From<TimerError> for TftpError {
 
 pub type Result<T> = result::Result<T, TftpError>;
 
-trait IOAdapter {
+pub trait IOAdapter {
     type R: Read + Sized;
     type W: Write + Sized;
     fn open_read(filename: String) -> io::Result<Self::R>;
     fn create_new(filename: String) -> io::Result<Self::W>;
 }
 
-struct FSAdapter;
+pub struct FSAdapter;
 
 impl IOAdapter for FSAdapter {
     type R = File;
@@ -118,7 +118,7 @@ struct ConnectionState<IO: IOAdapter> {
 
 pub type TftpServer = TftpServerImpl<FSAdapter>;
 
-struct TftpServerImpl<IO: IOAdapter> {
+pub struct TftpServerImpl<IO: IOAdapter> {
     /// The ID of a new token used for generating different tokens.
     new_token: usize,
     /// The event loop for handling async events.
