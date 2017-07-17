@@ -38,8 +38,8 @@ pub enum TftpError {
     /// Error signalling that a received packed did not match
     /// the current expected block number
     BlockNoMismatch,
-    /// Error returned when a read connection receives a DATA packet
-    /// or a write connection receives an ACK
+    /// Error returned when a reading connection receives a DATA packet
+    /// or a writing connection receives an ACK
     WrongPacketType,
 }
 
