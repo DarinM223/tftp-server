@@ -85,8 +85,6 @@ impl IOAdapter for FSAdapter {
     }
 }
 
-type ConnectionState = ConnectionStateImpl<FSAdapter>;
-
 enum RW<IO: IOAdapter> {
     R(IO::R),
     W(IO::W),
@@ -97,7 +95,7 @@ enum RW<IO: IOAdapter> {
 /// a RRQ or a WRQ packet and ends when the connection socket
 /// receives a DATA packet less than 516 bytes or if the connection
 /// socket receives an invalid packet.
-struct ConnectionStateImpl<IO: IOAdapter> {
+struct ConnectionState<IO: IOAdapter> {
     /// The UDP socket for the connection that receives ACK, DATA, or ERROR packets.
     conn: UdpSocket,
     /// The open file either being written to or read from during the transfer.
@@ -118,7 +116,9 @@ struct ConnectionStateImpl<IO: IOAdapter> {
     dallying: bool,
 }
 
-pub struct TftpServer {
+pub type TftpServer = TftpServerImpl<FSAdapter>;
+
+struct TftpServerImpl<IO: IOAdapter> {
     /// The ID of a new token used for generating different tokens.
     new_token: usize,
     /// The event loop for handling async events.
@@ -129,12 +129,12 @@ pub struct TftpServer {
     /// and creates a new separate UDP connection.
     socket: UdpSocket,
     /// The separate UDP connections for handling multiple requests.
-    connections: HashMap<Token, ConnectionState>,
+    connections: HashMap<Token, ConnectionState<IO>>,
 }
 
-impl TftpServer {
+impl<IO: IOAdapter> TftpServerImpl<IO> {
     /// Creates a new TFTP server from a random open UDP port.
-    pub fn new() -> Result<TftpServer> {
+    pub fn new() -> Result<Self> {
         let poll = Poll::new()?;
         let socket = UdpSocket::from_socket(create_socket(Some(Duration::from_secs(TIMEOUT)))?)?;
         let timer = Timer::default();
@@ -151,7 +151,7 @@ impl TftpServer {
             PollOpt::edge(),
         )?;
 
-        Ok(TftpServer {
+        Ok(Self {
             new_token: 2,
             poll: poll,
             timer: timer,
@@ -161,7 +161,7 @@ impl TftpServer {
     }
 
     /// Creates a new TFTP server from a socket address.
-    pub fn new_from_addr(addr: &SocketAddr) -> Result<TftpServer> {
+    pub fn new_from_addr(addr: &SocketAddr) -> Result<Self> {
         let poll = Poll::new()?;
         let socket = UdpSocket::bind(addr)?;
         let timer = Timer::default();
@@ -178,7 +178,7 @@ impl TftpServer {
             PollOpt::edge(),
         )?;
 
-        Ok(TftpServer {
+        Ok(Self {
             new_token: 2,
             poll: poll,
             timer: timer,
@@ -431,7 +431,7 @@ pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
     Err(TftpError::NoOpenSocket)
 }
 
-impl<IO: IOAdapter> ConnectionStateImpl<IO> {
+impl<IO: IOAdapter> ConnectionState<IO> {
     fn new_from_rrq(
         filename: String,
         mode: String,
