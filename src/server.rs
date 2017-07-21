@@ -63,6 +63,10 @@ impl From<TimerError> for TftpError {
 
 pub type Result<T> = result::Result<T, TftpError>;
 
+/// Trait used to inject filesystem IO handling into a server.
+/// A trivial default implementation is provided by FSAdapter.
+/// If you want to employ things like buffered IO, then it is necessary to provide
+/// an implementation for this trait and pass the implementing type to the server.
 pub trait IOAdapter {
     type R: Read + Sized;
     type W: Write + Sized;
@@ -70,6 +74,7 @@ pub trait IOAdapter {
     fn create_new(filename: String) -> io::Result<Self::W>;
 }
 
+/// Provides a simple, default implementation for IOAdapter.
 pub struct FSAdapter;
 
 impl IOAdapter for FSAdapter {
