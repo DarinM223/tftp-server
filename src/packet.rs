@@ -1,6 +1,8 @@
 use std::{fmt, result, str, io};
 use std::io::Write;
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
+use std::cmp::*;
+use server::Read512;
 
 #[derive(Debug)]
 pub enum PacketErr {
@@ -143,48 +145,11 @@ impl Clone for PacketData {
     }
 }
 
-/// A wrapper around the data that is to be sent in a TFTP DATA packet
-/// so that the data can be cloned and compared for equality.
-pub struct DataBytes(pub [u8; 512]);
-
-impl PartialEq for DataBytes {
-    fn eq(&self, other: &DataBytes) -> bool {
-        for i in 0..512 {
-            if self.0[i] != other.0[i] {
-                return false;
-            }
-        }
-
-        true
-    }
-}
-
-impl Clone for DataBytes {
-    fn clone(&self) -> DataBytes {
-        let mut bytes = [0; 512];
-        for i in 0..512 {
-            bytes[i] = self.0[i];
-        }
-
-        DataBytes(bytes)
-    }
-}
-
-impl fmt::Debug for DataBytes {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", String::from_utf8_lossy(&self.0[..]))
-    }
-}
-
 #[derive(PartialEq, Clone, Debug)]
 pub enum Packet {
     RRQ { filename: String, mode: String },
     WRQ { filename: String, mode: String },
-    DATA {
-        block_num: u16,
-        data: DataBytes,
-        len: usize,
-    },
+    DATA { block_num: u16, data: Vec<u8> },
     ACK(u16),
     ERROR { code: ErrorCode, msg: String },
 }
@@ -218,11 +183,7 @@ impl Packet {
         match self {
             Packet::RRQ { filename, mode } => rw_packet_bytes(OpCode::RRQ, filename, mode),
             Packet::WRQ { filename, mode } => rw_packet_bytes(OpCode::WRQ, filename, mode),
-            Packet::DATA {
-                block_num,
-                data,
-                len,
-            } => data_packet_bytes(block_num, &data.0[..len]),
+            Packet::DATA { block_num, data } => data_packet_bytes(block_num, &data.as_slice()),
             Packet::ACK(block_num) => ack_packet_bytes(block_num),
             Packet::ERROR { code, msg } => error_packet_bytes(code, msg),
         }
@@ -232,7 +193,11 @@ impl Packet {
 /// Reads until the zero byte and returns a string containing the bytes read
 /// and the rest of the buffer, skipping the zero byte
 fn read_string(bytes: &[u8]) -> Result<(String, &[u8])> {
-    let result_bytes = bytes.iter().take_while(|c| **c != 0).cloned().collect::<Vec<u8>>();
+    let result_bytes = bytes
+        .iter()
+        .take_while(|c| **c != 0)
+        .cloned()
+        .collect::<Vec<u8>>();
     // TODO: add test for error condition below
     if result_bytes.len() == bytes.len() {
         // reading didn't stop on a zero byte
@@ -240,7 +205,7 @@ fn read_string(bytes: &[u8]) -> Result<(String, &[u8])> {
     }
 
     let result_str = str::from_utf8(result_bytes.as_slice())?.to_string();
-    let (_,tail) = bytes.split_at(result_bytes.len() + 1 /* +1 so we skip the \0 byte*/);
+    let (_, tail) = bytes.split_at(result_bytes.len() + 1 /* +1 so we skip the \0 byte*/);
     Ok((result_str, tail))
 }
 
@@ -267,14 +232,13 @@ fn read_rw_packet(code: OpCode, bytes: &[u8]) -> Result<Packet> {
 
 fn read_data_packet(mut bytes: &[u8]) -> Result<Packet> {
     let block_num = bytes.read_u16::<BigEndian>()?;
-    let mut data = [0; 512];
+    let mut data = Vec::with_capacity(512);
     // TODO: test with longer packets
-    let len = (&mut data[..]).write(bytes)?;
+    bytes.read_512(&mut data)?;
 
     Ok(Packet::DATA {
         block_num: block_num,
-        data: DataBytes(data),
-        len: len,
+        data: data,
     })
 }
 

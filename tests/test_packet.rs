@@ -36,8 +36,7 @@ packet!(
     data,
     Packet::DATA {
         block_num: 1234,
-        data: DataBytes(BYTE_DATA),
-        len: 512,
+        data: Vec::from(&BYTE_DATA[..]),
     }
 );
 packet!(

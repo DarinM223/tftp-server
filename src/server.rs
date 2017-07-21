@@ -1,7 +1,7 @@
 use mio::*;
 use mio::timer::{Timer, TimerError, Timeout};
 use mio::udp::UdpSocket;
-use packet::{ErrorCode, MAX_PACKET_SIZE, DataBytes, Packet, PacketData, PacketErr};
+use packet::{ErrorCode, MAX_PACKET_SIZE, Packet, PacketData, PacketErr};
 use rand;
 use rand::Rng;
 use std::collections::HashMap;
@@ -271,11 +271,7 @@ impl TftpServer {
 
             match packet {
                 Packet::ACK(block_num) => handle_ack_packet(block_num, conn)?,
-                Packet::DATA {
-                    block_num,
-                    data,
-                    len,
-                } => handle_data_packet(block_num, data, len, conn)?,
+                Packet::DATA { block_num, data } => handle_data_packet(block_num, data, conn)?,
                 Packet::ERROR { code, msg } => {
                     error!("Error message received with code {:?}: {:?}", code, msg);
                     return Err(TftpError::TftpError(code, conn.addr));
@@ -427,14 +423,13 @@ fn handle_rrq_packet(
     })?;
     let block_num = 1;
 
-    let mut buf = [0; 512];
-    let amount = file.read(&mut buf)?;
+    let mut data = Vec::with_capacity(512);
+    file.read_512(&mut data)?;
 
     // Reply with first data packet with a block number of 1.
     let last_packet = Packet::DATA {
         block_num: block_num,
-        data: DataBytes(buf),
-        len: amount,
+        data: data,
     };
 
     Ok((file, block_num, last_packet))
@@ -474,14 +469,13 @@ fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> Result<()> {
     }
 
     incr_block_num(&mut conn.block_num);
-    let mut buf = [0; 512];
-    let amount = conn.file.read(&mut buf)?;
+    let mut data = Vec::with_capacity(512);
+    let amount = conn.file.read_512(&mut data)?;
 
     // Send next data packet.
     conn.last_packet = Packet::DATA {
         block_num: conn.block_num,
-        data: DataBytes(buf),
-        len: amount,
+        data: data,
     };
     conn.conn.send_to(
         conn.last_packet.clone().to_bytes()?.to_slice(),
@@ -495,12 +489,7 @@ fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> Result<()> {
     }
 }
 
-fn handle_data_packet(
-    block_num: u16,
-    data: DataBytes,
-    len: usize,
-    conn: &mut ConnectionState,
-) -> Result<()> {
+fn handle_data_packet(block_num: u16, data: Vec<u8>, conn: &mut ConnectionState) -> Result<()> {
     info!("Received data with block number {}", block_num);
 
     incr_block_num(&mut conn.block_num);
@@ -508,7 +497,7 @@ fn handle_data_packet(
         return Ok(());
     }
 
-    conn.file.write_all(&data.0[0..len])?;
+    conn.file.write_all(&data[..])?;
 
     // Send ACK packet for data.
     conn.last_packet = Packet::ACK(conn.block_num);
@@ -517,9 +506,22 @@ fn handle_data_packet(
         &conn.addr,
     )?;
 
-    if len < 512 {
+    if data.len() < 512 {
         Err(TftpError::CloseConnection)
     } else {
         Ok(())
+    }
+}
+
+pub trait Read512 {
+    fn read_512(&mut self, buf: &mut Vec<u8>) -> io::Result<usize>;
+}
+
+impl<T> Read512 for T
+where
+    T: Read,
+{
+    fn read_512(&mut self, mut buf: &mut Vec<u8>) -> io::Result<usize> {
+        self.take(512).read_to_end(&mut buf)
     }
 }

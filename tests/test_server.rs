@@ -7,8 +7,9 @@ use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::thread;
 use std::time::Duration;
-use tftp_server::packet::{ErrorCode, DataBytes, Packet, PacketData, MAX_PACKET_SIZE};
+use tftp_server::packet::{ErrorCode, Packet, PacketData, MAX_PACKET_SIZE};
 use tftp_server::server::{create_socket, incr_block_num, Result, TftpServer};
+use tftp_server::server::Read512;
 
 const TIMEOUT: u64 = 3;
 
@@ -43,7 +44,10 @@ fn timeout_test(server_addr: &SocketAddr) -> Result<()> {
         filename: "hello.txt".to_string(),
         mode: "octet".to_string(),
     };
-    socket.send_to(init_packet.to_bytes()?.to_slice(), server_addr)?;
+    socket.send_to(
+        init_packet.to_bytes()?.to_slice(),
+        server_addr,
+    )?;
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
@@ -87,12 +91,11 @@ fn rrq_initial_data_test(server_addr: &SocketAddr) -> Result<()> {
         mode: "octet".to_string(),
     };
     let mut file = File::open("./files/hello.txt")?;
-    let mut buf = [0; 512];
-    let amount = file.read(&mut buf)?;
+    let mut buf = Vec::with_capacity(512);
+    file.read_512(&mut buf)?;
     let expected = Packet::DATA {
         block_num: 1,
-        data: DataBytes(buf),
-        len: amount,
+        data: buf,
     };
 
     let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
@@ -110,7 +113,10 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
         filename: "hello.txt".to_string(),
         mode: "octet".to_string(),
     };
-    socket.send_to(init_packet.to_bytes()?.to_slice(), server_addr)?;
+    socket.send_to(
+        init_packet.to_bytes()?.to_slice(),
+        server_addr,
+    )?;
 
     {
         let mut file = File::open("./files/hello.txt")?;
@@ -126,16 +132,15 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
             incr_block_num(&mut block_num);
 
             // Read and send data packet
-            let mut buf = [0; 512];
-            let amount = match file.read(&mut buf) {
+            let mut buf = Vec::with_capacity(512);
+            match file.read_512(&mut buf) {
                 Err(_) => break,
                 Ok(i) if i == 0 => break,
                 Ok(i) => i,
             };
             let data_packet = Packet::DATA {
                 block_num: block_num,
-                data: DataBytes(buf),
-                len: amount,
+                data: buf,
             };
             socket.send_to(data_packet.to_bytes()?.to_slice(), &src)?;
         }
@@ -158,7 +163,10 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
         filename: "./files/hello.txt".to_string(),
         mode: "octet".to_string(),
     };
-    socket.send_to(init_packet.to_bytes()?.to_slice(), server_addr)?;
+    socket.send_to(
+        init_packet.to_bytes()?.to_slice(),
+        server_addr,
+    )?;
 
     {
         let mut file = File::create("./hello.txt")?;
@@ -169,21 +177,16 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
             let (amt, src) = socket.recv_from(&mut reply_buf)?;
             recv_src = src;
             let reply_packet = Packet::read(PacketData::new(reply_buf, amt))?;
-            if let Packet::DATA {
-                block_num,
-                data,
-                len,
-            } = reply_packet
-            {
+            if let Packet::DATA { block_num, data } = reply_packet {
                 assert_eq!(client_block_num, block_num);
-                file.write_all(&data.0[0..len])?;
+                file.write_all(&data)?;
 
                 let ack_packet = Packet::ACK(client_block_num);
                 socket.send_to(ack_packet.to_bytes()?.to_slice(), &src)?;
 
                 incr_block_num(&mut client_block_num);
 
-                if len < 512 {
+                if data.len() < 512 {
                     break;
                 }
             } else {
@@ -209,7 +212,10 @@ fn wrq_file_exists_test(server_addr: &SocketAddr) -> Result<()> {
         filename: "./files/hello.txt".to_string(),
         mode: "octet".to_string(),
     };
-    socket.send_to(init_packet.to_bytes()?.to_slice(), server_addr)?;
+    socket.send_to(
+        init_packet.to_bytes()?.to_slice(),
+        server_addr,
+    )?;
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
@@ -228,7 +234,10 @@ fn rrq_file_not_found_test(server_addr: &SocketAddr) -> Result<()> {
         filename: "./hello.txt".to_string(),
         mode: "octet".to_string(),
     };
-    socket.send_to(init_packet.to_bytes()?.to_slice(), server_addr)?;
+    socket.send_to(
+        init_packet.to_bytes()?.to_slice(),
+        server_addr,
+    )?;
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
