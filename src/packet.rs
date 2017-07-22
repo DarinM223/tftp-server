@@ -1,7 +1,6 @@
-use std::{fmt, result, str, io};
-use std::io::{Read, Write};
+use std::{result, str, io};
+use std::io::Write;
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
-use std::cmp::*;
 use server::Read512;
 
 #[derive(Debug)]
@@ -114,7 +113,7 @@ pub struct PacketData(Vec<u8>);
 
 impl PacketData {
     pub fn new(bytes: [u8; MAX_PACKET_SIZE], len: usize) -> PacketData {
-        let mut v = vec![];
+        let mut v = Vec::with_capacity(len);
         v.write_all(&bytes[..len]);
         PacketData(v)
     }
@@ -241,50 +240,34 @@ fn rw_packet_bytes(packet: OpCode, filename: String, mode: String) -> Result<Pac
         return Err(PacketErr::OverflowSize);
     }
 
-    let mut bytes = [0; MAX_PACKET_SIZE];
+    let mut buf = Vec::with_capacity(MAX_PACKET_SIZE);
 
-    let leftover = {
-        let mut buf = &mut bytes[..];
+    buf.write_u16::<BigEndian>(packet as u16)?;
+    buf.write_all(filename.as_bytes())?;
+    buf.push(0);
+    buf.write_all(mode.as_bytes())?;
+    buf.push(0);
 
-        buf.write_u16::<BigEndian>(packet as u16)?;
-        buf.write_all(filename.as_bytes())?;
-        buf.write_all(&[0])?;
-        buf.write_all(mode.as_bytes())?;
-        buf.write_all(&[0])?;
-
-        buf.len() - 1 // TODO: figure out why this is needed
-    };
-
-    Ok(PacketData::new(bytes, bytes[..].len() - leftover))
+    Ok(PacketData(buf))
 }
 
 fn data_packet_bytes(block_num: u16, data: &[u8]) -> Result<PacketData> {
-    let mut bytes = [0; MAX_PACKET_SIZE];
+    let mut buf = Vec::with_capacity(MAX_PACKET_SIZE);
 
-    let leftover = {
-        let mut buf = &mut bytes[..];
+    buf.write_u16::<BigEndian>(OpCode::DATA as u16)?;
+    buf.write_u16::<BigEndian>(block_num)?;
+    buf.write_all(data)?;
 
-        buf.write_u16::<BigEndian>(OpCode::DATA as u16)?;
-        buf.write_u16::<BigEndian>(block_num)?;
-        buf.write_all(data)?;
-
-        buf.len()
-    };
-
-    Ok(PacketData::new(bytes, bytes[..].len() - leftover))
+    Ok(PacketData(buf))
 }
 
 fn ack_packet_bytes(block_num: u16) -> Result<PacketData> {
-    let mut bytes = [0; MAX_PACKET_SIZE];
+    let mut buf = Vec::with_capacity(MAX_PACKET_SIZE);
 
-    {
-        let mut buf = &mut bytes[..];
+    buf.write_u16::<BigEndian>(OpCode::ACK as u16)?;
+    buf.write_u16::<BigEndian>(block_num)?;
 
-        buf.write_u16::<BigEndian>(OpCode::ACK as u16)?;
-        buf.write_u16::<BigEndian>(block_num)?;
-    }
-
-    Ok(PacketData::new(bytes, 4))
+    Ok(PacketData(buf))
 }
 
 fn error_packet_bytes(code: ErrorCode, msg: String) -> Result<PacketData> {
@@ -292,20 +275,14 @@ fn error_packet_bytes(code: ErrorCode, msg: String) -> Result<PacketData> {
         return Err(PacketErr::OverflowSize);
     }
 
-    let mut bytes = [0; MAX_PACKET_SIZE];
+    let mut buf = Vec::with_capacity(MAX_PACKET_SIZE);
 
-    let leftover = {
-        let mut buf = &mut bytes[..];
+    buf.write_u16::<BigEndian>(OpCode::ERROR as u16)?;
+    buf.write_u16::<BigEndian>(code as u16)?;
+    buf.write_all(msg.as_bytes())?;
+    buf.push(0);
 
-        buf.write_u16::<BigEndian>(OpCode::ERROR as u16)?;
-        buf.write_u16::<BigEndian>(code as u16)?;
-        buf.write_all(msg.as_bytes())?;
-        buf.write_all(&[0])?;
-
-        buf.len()
-    };
-
-    Ok(PacketData::new(bytes, bytes[..].len() - leftover))
+    Ok(PacketData(buf))
 }
 
 macro_rules! read_string {

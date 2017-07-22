@@ -1,7 +1,7 @@
 use mio::*;
 use mio::timer::{Timer, TimerError, Timeout};
 use mio::udp::UdpSocket;
-use packet::{ErrorCode, MAX_PACKET_SIZE, Packet, PacketData, PacketErr};
+use packet::{ErrorCode, MAX_PACKET_SIZE, Packet, PacketErr};
 use rand;
 use rand::Rng;
 use std::collections::HashMap;
@@ -519,7 +519,7 @@ pub trait Read512 {
 
 impl<T> Read512 for T
 where
-    T: Read
+    T: Read,
 {
     fn read_512(&mut self, mut buf: &mut Vec<u8>) -> io::Result<usize> {
         self.take(512).read_to_end(&mut buf)
