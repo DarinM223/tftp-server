@@ -2,7 +2,7 @@ extern crate env_logger;
 extern crate tftp_server;
 
 use std::fs;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::thread;
