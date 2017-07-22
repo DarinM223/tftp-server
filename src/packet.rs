@@ -112,12 +112,6 @@ pub const MAX_DATA_SIZE: usize = 516;
 pub struct PacketData(Vec<u8>);
 
 impl PacketData {
-    pub fn new(bytes: [u8; MAX_PACKET_SIZE], len: usize) -> PacketData {
-        let mut v = Vec::with_capacity(len);
-        v.write_all(&bytes[..len]);
-        PacketData(v)
-    }
-
     /// Returns a byte slice that can be sent through a socket.
     pub fn to_slice<'a>(&'a self) -> &'a [u8] {
         self.0.as_slice()
