@@ -1,6 +1,6 @@
 [package]
 name = "tftp_server"
-version = "0.0.2"
+version = "0.1.0"
 authors = ["Darin Minamoto <darinm223@gmail.com>"]
 description = "A TFTP server implementation in Rust using mio"
 repository = "https://github.com/DarinM223/tftp-server"
@@ -14,6 +14,7 @@ rand = "0.3"
 byteorder = "1.0"
 log = "0.3.6"
 env_logger = "0.4"
+mio-more = { git = "https://github.com/carllerche/mio-more.git" }
 
 [dev-dependencies]
 env_logger = "0.4"

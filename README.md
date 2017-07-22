@@ -15,7 +15,6 @@ The first way allows you to run the server without specifying a port. The server
 ```
 $ ./target/debug/tftp_server_bin
 Server created at address: V4(127.0.0.1:61204)
-Getting None when receiving from server socket
 ```
 
 In this example, the port number picked was 61204.
@@ -24,7 +23,6 @@ The second way allows you to choose an open port for the server to run on. You s
 
 ```
 $ ./target/debug/tftp_server_bin 61204
-Getting None when receiving from server socket
 ```
 
 If the port is already taken or there is an error using the port, the server will panic with an IoError.
@@ -53,3 +51,11 @@ you have to turn on logging. To run tests with logging enabled run:
 ```
 $ RUST_LOG=tftp_server=info cargo test
 ```
+
+Feature TODOs
+-----
+
+* [ ] serve from specified directory, not just the current one
+* [ ] treat directory as readonly (reject write requests)
+* [ ] IPv6 support (and thus multiple address support)
+* [ ] CLI switches for logging

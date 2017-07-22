@@ -1,16 +1,12 @@
 use mio::*;
-use mio::timer::{Timer, TimerError, Timeout};
+use mio_more::timer::{Timer, TimerError, Timeout};
 use mio::udp::UdpSocket;
-use packet::{ErrorCode, MAX_PACKET_SIZE, DataBytes, Packet, PacketData, PacketErr};
-use rand;
-use rand::Rng;
+use packet::{ErrorCode, MAX_PACKET_SIZE, Packet, PacketErr};
+use rand::{self, Rng};
 use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::fs::File;
-use std::io;
-use std::io::{Read, Write};
-use std::net;
-use std::net::SocketAddr;
+use std::fs::{self, File};
+use std::io::{self, Read, Write};
+use std::net::{self, SocketAddr};
 use std::result;
 use std::str::FromStr;
 use std::time::Duration;
@@ -229,8 +225,8 @@ impl<IO: IOAdapter> TftpServerImpl<IO> {
     ) -> Result<(Packet, Token)> {
         // Handle the RRQ or WRQ packet.
         let (io_handle, block_num, send_packet) = match packet {
-            Packet::RRQ { filename, mode } => ConnectionState::new_from_rrq(filename, mode, src)?,
-            Packet::WRQ { filename, mode } => ConnectionState::new_from_wrq(filename, mode, src)?,
+            Packet::RRQ { filename, mode } => ConnectionState::new_from_rrq(filename, &mode, src)?,
+            Packet::WRQ { filename, mode } => ConnectionState::new_from_wrq(filename, &mode, src)?,
             _ => return Err(TftpError::TftpError(ErrorCode::IllegalTFTP, *src)),
         };
 
@@ -277,7 +273,7 @@ impl<IO: IOAdapter> TftpServerImpl<IO> {
             } else if let Some(ref mut conn) = self.connections.get_mut(&token) {
                 info!("Timeout: resending last packet for token: {:?}", token);
                 conn.conn.send_to(
-                    conn.last_packet.clone().to_bytes()?.to_slice(),
+                    conn.last_packet.clone().into_bytes()?.to_slice(),
                     &conn.addr,
                 )?;
             }
@@ -292,11 +288,7 @@ impl<IO: IOAdapter> TftpServerImpl<IO> {
         if let Some(ref mut conn) = self.connections.get_mut(&token) {
             match packet {
                 Packet::ACK(block_num) => Ok(conn.handle_ack_packet(block_num)?),
-                Packet::DATA {
-                    block_num,
-                    data,
-                    len,
-                } => Ok(conn.handle_data_packet(block_num, data, len)?),
+                Packet::DATA { block_num, data } => Ok(conn.handle_data_packet(block_num, data)?),
                 Packet::ERROR { code, msg } => {
                     error!("Error message received with code {:?}: {:?}", code, msg);
                     Err(TftpError::TftpError(code, conn.addr))
@@ -315,12 +307,12 @@ impl<IO: IOAdapter> TftpServerImpl<IO> {
     fn handle_error(&mut self, token: &Token, code: ErrorCode, addr: &SocketAddr) -> Result<()> {
         if *token == SERVER {
             self.socket.send_to(
-                code.to_packet().to_bytes()?.to_slice(),
+                code.to_packet().into_bytes()?.to_slice(),
                 addr,
             )?;
-        } else if let Some(ref mut conn) = self.connections.get_mut(&token) {
+        } else if let Some(ref mut conn) = self.connections.get_mut(token) {
             conn.conn.send_to(
-                code.to_packet().to_bytes()?.to_slice(),
+                code.to_packet().into_bytes()?.to_slice(),
                 addr,
             )?;
         }
@@ -339,12 +331,12 @@ impl<IO: IOAdapter> TftpServerImpl<IO> {
                     Some((amt, src)) => (amt, src),
                     None => return Ok(()),
                 };
-                let packet = Packet::read(PacketData::new(buf, amt))?;
+                let packet = Packet::read(&buf[..amt])?;
 
                 match self.handle_server_packet(packet, &src) {
                     Ok((pkt, token)) => {
                         self.connections.get_mut(&token).unwrap().conn.send_to(
-                            pkt.clone().to_bytes()?.to_slice(),
+                            pkt.clone().into_bytes()?.to_slice(),
                             &src,
                         )?;
                     }
@@ -362,7 +354,7 @@ impl<IO: IOAdapter> TftpServerImpl<IO> {
                         Some((amt, _)) => amt,
                         None => return Ok(()),
                     };
-                    packet = Packet::read(PacketData::new(buf, amt))?;
+                    packet = Packet::read(&buf[..amt])?;
                 }
 
                 match self.handle_connection_packet(packet, token) {
@@ -371,7 +363,7 @@ impl<IO: IOAdapter> TftpServerImpl<IO> {
                             // TODO: fix clumsy repeated lookup of connections
                             let conn = self.connections.get_mut(&token).unwrap();
                             conn.conn.send_to(
-                                pkt.clone().to_bytes()?.to_slice(),
+                                pkt.clone().into_bytes()?.to_slice(),
                                 &conn.addr,
                             )?;
                         }
@@ -410,7 +402,7 @@ impl<IO: IOAdapter> TftpServerImpl<IO> {
     }
 }
 
-/// Creates a std::net::UdpSocket on a random open UDP port.
+/// Creates a `std::net::UdpSocket` on a random open UDP port.
 /// The range of valid ports is from 0 to 65535 and if the function
 /// cannot find a open port within 100 different random ports it returns an error.
 pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
@@ -439,7 +431,7 @@ pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
 impl<IO: IOAdapter> ConnectionState<IO> {
     fn new_from_rrq(
         filename: String,
-        mode: String,
+        mode: &str,
         addr: &SocketAddr,
     ) -> Result<(RW<IO>, u16, Packet)> {
         info!(
@@ -457,14 +449,13 @@ impl<IO: IOAdapter> ConnectionState<IO> {
         })?;
         let block_num = 1;
 
-        let mut buf = [0; 512];
-        let amount = file.read(&mut buf)?;
+        let mut data = Vec::with_capacity(512);
+        file.read_512(&mut data)?;
 
         // Reply with first data packet with a block number of 1.
         let last_packet = Packet::DATA {
             block_num: block_num,
-            data: DataBytes(buf),
-            len: amount,
+            data: data,
         };
 
         Ok((RW::R(file), block_num, last_packet))
@@ -472,7 +463,7 @@ impl<IO: IOAdapter> ConnectionState<IO> {
 
     fn new_from_wrq(
         filename: String,
-        mode: String,
+        mode: &str,
         addr: &SocketAddr,
     ) -> Result<(RW<IO>, u16, Packet)> {
         info!(
@@ -480,6 +471,11 @@ impl<IO: IOAdapter> ConnectionState<IO> {
             filename,
             mode
         );
+
+        if filename.contains("..") || filename.starts_with('/') {
+            return Err(TftpError::TftpError(ErrorCode::FileNotFound, *addr));
+        }
+
         let file = IO::create_new(filename).map_err(|e| match e.kind() {
             io::ErrorKind::AlreadyExists => TftpError::TftpError(ErrorCode::FileExists, *addr),
             _ => e.into(),
@@ -499,17 +495,16 @@ impl<IO: IOAdapter> ConnectionState<IO> {
         }
 
         self.block_num = self.block_num.wrapping_add(1);
-        let mut buf = [0; 512];
+        let mut data = Vec::with_capacity(512);
         let amount = match self.file {
-            RW::R(ref mut r) => r.read(&mut buf)?,
+            RW::R(ref mut r) => r.read_512(&mut data)?,
             _ => return Err(TftpError::WrongPacketType),
         };
 
         // Send next data packet.
         self.last_packet = Packet::DATA {
             block_num: self.block_num,
-            data: DataBytes(buf),
-            len: amount,
+            data: data,
         };
 
         if amount < 512 {
@@ -519,12 +514,7 @@ impl<IO: IOAdapter> ConnectionState<IO> {
         Ok(self.last_packet.clone())
     }
 
-    fn handle_data_packet(
-        &mut self,
-        block_num: u16,
-        data: DataBytes,
-        len: usize,
-    ) -> Result<Packet> {
+    fn handle_data_packet(&mut self, block_num: u16, data: Vec<u8>) -> Result<Packet> {
         info!("Received data with block number {}", block_num);
 
         self.block_num = self.block_num.wrapping_add(1);
@@ -533,16 +523,29 @@ impl<IO: IOAdapter> ConnectionState<IO> {
         }
 
         match self.file {
-            RW::W(ref mut w) => w.write_all(&data.0[0..len])?,
+            RW::W(ref mut w) => w.write_all(&data[..])?,
             _ => return Err(TftpError::WrongPacketType),
         }
 
         self.last_packet = Packet::ACK(self.block_num);
 
-        if len < 512 {
+        if data.len() < 512 {
             self.dallying = true;
         }
 
         Ok(self.last_packet.clone())
+    }
+}
+
+pub trait Read512 {
+    fn read_512(&mut self, buf: &mut Vec<u8>) -> io::Result<usize>;
+}
+
+impl<T> Read512 for T
+where
+    T: Read,
+{
+    fn read_512(&mut self, mut buf: &mut Vec<u8>) -> io::Result<usize> {
+        self.take(512).read_to_end(&mut buf)
     }
 }
