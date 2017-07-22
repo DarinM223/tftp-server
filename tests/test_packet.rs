@@ -6,7 +6,7 @@ macro_rules! packet {
     ($name:ident, $packet:expr) => {
         #[test]
         fn $name() {
-            let bytes = $packet.clone().to_bytes();
+            let bytes = $packet.clone().into_bytes();
             assert!(bytes.is_ok());
             let packet = bytes.and_then(|pd| Packet::read(pd.to_slice()));
             assert!(packet.is_ok());

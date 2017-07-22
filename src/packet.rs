@@ -54,7 +54,7 @@ macro_rules! primitive_enum {
 }
 
 primitive_enum! (
-    #[derive(PartialEq, Clone, Debug)]
+    #[derive(PartialEq, Copy, Clone, Debug)]
     pub enum OpCode of u16 {
         RRQ = 1,
         WRQ = 2,
@@ -113,7 +113,7 @@ pub struct PacketData(Vec<u8>);
 
 impl PacketData {
     /// Returns a byte slice that can be sent through a socket.
-    pub fn to_slice<'a>(&'a self) -> &'a [u8] {
+    pub fn to_slice(&self) -> &[u8] {
         self.0.as_slice()
     }
 }
@@ -132,10 +132,10 @@ impl Packet {
     pub fn read(mut bytes: &[u8]) -> Result<Packet> {
         let opcode = OpCode::from_u16(bytes.read_u16::<BigEndian>()?)?;
         match opcode {
-            OpCode::RRQ | OpCode::WRQ => read_rw_packet(opcode, &bytes),
-            OpCode::DATA => read_data_packet(&bytes),
-            OpCode::ACK => read_ack_packet(&bytes),
-            OpCode::ERROR => read_error_packet(&bytes),
+            OpCode::RRQ | OpCode::WRQ => read_rw_packet(opcode, bytes),
+            OpCode::DATA => read_data_packet(bytes),
+            OpCode::ACK => read_ack_packet(bytes),
+            OpCode::ERROR => read_error_packet(bytes),
         }
     }
 
@@ -151,13 +151,13 @@ impl Packet {
     }
 
     /// Consumes the packet and returns the packet in byte representation.
-    pub fn to_bytes(self) -> Result<PacketData> {
+    pub fn into_bytes(self) -> Result<PacketData> {
         match self {
-            Packet::RRQ { filename, mode } => rw_packet_bytes(OpCode::RRQ, filename, mode),
-            Packet::WRQ { filename, mode } => rw_packet_bytes(OpCode::WRQ, filename, mode),
-            Packet::DATA { block_num, data } => data_packet_bytes(block_num, &data.as_slice()),
+            Packet::RRQ { filename, mode } => rw_packet_bytes(OpCode::RRQ, &filename, &mode),
+            Packet::WRQ { filename, mode } => rw_packet_bytes(OpCode::WRQ, &filename, &mode),
+            Packet::DATA { block_num, data } => data_packet_bytes(block_num, data.as_slice()),
             Packet::ACK(block_num) => ack_packet_bytes(block_num),
-            Packet::ERROR { code, msg } => error_packet_bytes(code, msg),
+            Packet::ERROR { code, msg } => error_packet_bytes(code, &msg),
         }
     }
 }
@@ -182,8 +182,8 @@ fn read_string(bytes: &[u8]) -> Result<(String, &[u8])> {
 }
 
 fn read_rw_packet(code: OpCode, bytes: &[u8]) -> Result<Packet> {
-    let (filename, rest) = read_string(&bytes)?;
-    let (mode, _) = read_string(&rest)?;
+    let (filename, rest) = read_string(bytes)?;
+    let (mode, _) = read_string(rest)?;
 
     match code {
         OpCode::RRQ => {
@@ -221,7 +221,7 @@ fn read_ack_packet(mut bytes: &[u8]) -> Result<Packet> {
 
 fn read_error_packet(mut bytes: &[u8]) -> Result<Packet> {
     let error_code = ErrorCode::from_u16(bytes.read_u16::<BigEndian>()?)?;
-    let (msg, _) = read_string(&bytes)?;
+    let (msg, _) = read_string(bytes)?;
 
     Ok(Packet::ERROR {
         code: error_code,
@@ -229,7 +229,7 @@ fn read_error_packet(mut bytes: &[u8]) -> Result<Packet> {
     })
 }
 
-fn rw_packet_bytes(packet: OpCode, filename: String, mode: String) -> Result<PacketData> {
+fn rw_packet_bytes(packet: OpCode, filename: &str, mode: &str) -> Result<PacketData> {
     if filename.len() + mode.len() > MAX_PACKET_SIZE {
         return Err(PacketErr::OverflowSize);
     }
@@ -264,7 +264,7 @@ fn ack_packet_bytes(block_num: u16) -> Result<PacketData> {
     Ok(PacketData(buf))
 }
 
-fn error_packet_bytes(code: ErrorCode, msg: String) -> Result<PacketData> {
+fn error_packet_bytes(code: ErrorCode, msg: &str) -> Result<PacketData> {
     if msg.len() + 5 > MAX_PACKET_SIZE {
         return Err(PacketErr::OverflowSize);
     }

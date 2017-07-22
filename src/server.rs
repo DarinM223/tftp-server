@@ -196,8 +196,8 @@ impl TftpServer {
 
         // Handle the RRQ or WRQ packet.
         let (file, block_num, send_packet) = match packet {
-            Packet::RRQ { filename, mode } => handle_rrq_packet(filename, mode, &src)?,
-            Packet::WRQ { filename, mode } => handle_wrq_packet(filename, mode, &src)?,
+            Packet::RRQ { filename, mode } => handle_rrq_packet(filename, &mode, &src)?,
+            Packet::WRQ { filename, mode } => handle_wrq_packet(filename, &mode, &src)?,
             _ => return Err(TftpError::TftpError(ErrorCode::IllegalTFTP, src)),
         };
 
@@ -214,7 +214,7 @@ impl TftpServer {
         info!("Created connection with token: {:?}", token);
 
         socket.send_to(
-            send_packet.clone().to_bytes()?.to_slice(),
+            send_packet.clone().into_bytes()?.to_slice(),
             &src,
         )?;
         self.connections.insert(
@@ -245,7 +245,7 @@ impl TftpServer {
             if let Some(ref mut conn) = self.connections.get_mut(&token) {
                 info!("Timeout: resending last packet for token: {:?}", token);
                 conn.conn.send_to(
-                    conn.last_packet.clone().to_bytes()?.to_slice(),
+                    conn.last_packet.clone().into_bytes()?.to_slice(),
                     &conn.addr,
                 )?;
             }
@@ -286,12 +286,12 @@ impl TftpServer {
     fn handle_error(&mut self, token: &Token, code: ErrorCode, addr: &SocketAddr) -> Result<()> {
         if *token == SERVER {
             self.socket.send_to(
-                code.to_packet().to_bytes()?.to_slice(),
+                code.to_packet().into_bytes()?.to_slice(),
                 addr,
             )?;
-        } else if let Some(ref mut conn) = self.connections.get_mut(&token) {
+        } else if let Some(ref mut conn) = self.connections.get_mut(token) {
             conn.conn.send_to(
-                code.to_packet().to_bytes()?.to_slice(),
+                code.to_packet().into_bytes()?.to_slice(),
                 addr,
             )?;
         }
@@ -356,7 +356,7 @@ impl TftpServer {
     }
 }
 
-/// Creates a std::net::UdpSocket on a random open UDP port.
+/// Creates a `std::net::UdpSocket` on a random open UDP port.
 /// The range of valid ports is from 0 to 65535 and if the function
 /// cannot find a open port within 100 different random ports it returns an error.
 pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
@@ -401,7 +401,7 @@ pub fn incr_block_num(block_num: &mut u16) {
 
 fn handle_rrq_packet(
     filename: String,
-    mode: String,
+    mode: &str,
     addr: &SocketAddr,
 ) -> Result<(File, u16, Packet)> {
     info!(
@@ -433,7 +433,7 @@ fn handle_rrq_packet(
 
 fn handle_wrq_packet(
     filename: String,
-    mode: String,
+    mode: &str,
     addr: &SocketAddr,
 ) -> Result<(File, u16, Packet)> {
     info!(
@@ -474,7 +474,7 @@ fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> Result<()> {
         data: data,
     };
     conn.conn.send_to(
-        conn.last_packet.clone().to_bytes()?.to_slice(),
+        conn.last_packet.clone().into_bytes()?.to_slice(),
         &conn.addr,
     )?;
 
@@ -498,7 +498,7 @@ fn handle_data_packet(block_num: u16, data: Vec<u8>, conn: &mut ConnectionState)
     // Send ACK packet for data.
     conn.last_packet = Packet::ACK(conn.block_num);
     conn.conn.send_to(
-        conn.last_packet.clone().to_bytes()?.to_slice(),
+        conn.last_packet.clone().into_bytes()?.to_slice(),
         &conn.addr,
     )?;
 
