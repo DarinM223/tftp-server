@@ -51,13 +51,13 @@ fn timeout_test(server_addr: &SocketAddr) -> Result<()> {
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
-    let reply_packet = Packet::read(PacketData::new(buf, amt))?;
+    let reply_packet = Packet::read(&buf[0..amt])?;
     assert_eq!(reply_packet, Packet::ACK(0));
 
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
-    let reply_packet = Packet::read(PacketData::new(buf, amt))?;
+    let reply_packet = Packet::read(&buf[0..amt])?;
     assert_eq!(reply_packet, Packet::ACK(0));
 
     assert!(fs::metadata("./hello.txt").is_ok());
@@ -77,7 +77,7 @@ fn wrq_initial_ack_test(server_addr: &SocketAddr) -> Result<()> {
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
-    assert_eq!(Packet::read(PacketData::new(buf, amt))?, expected);
+    assert_eq!(Packet::read(&buf[0..amt])?, expected);
 
     // Test that hello.txt was created and remove hello.txt
     assert!(fs::metadata("./hello.txt").is_ok());
@@ -103,7 +103,7 @@ fn rrq_initial_data_test(server_addr: &SocketAddr) -> Result<()> {
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
-    assert_eq!(Packet::read(PacketData::new(buf, amt))?, expected);
+    assert_eq!(Packet::read(&buf[0..amt])?, expected);
     Ok(())
 }
 
@@ -126,7 +126,7 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
             let mut reply_buf = [0; MAX_PACKET_SIZE];
             let (amt, src) = socket.recv_from(&mut reply_buf)?;
             recv_src = src;
-            let reply_packet = Packet::read(PacketData::new(reply_buf, amt))?;
+            let reply_packet = Packet::read(&reply_buf[0..amt])?;
 
             assert_eq!(reply_packet, Packet::ACK(block_num));
             incr_block_num(&mut block_num);
@@ -176,7 +176,7 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
             let mut reply_buf = [0; MAX_PACKET_SIZE];
             let (amt, src) = socket.recv_from(&mut reply_buf)?;
             recv_src = src;
-            let reply_packet = Packet::read(PacketData::new(reply_buf, amt))?;
+            let reply_packet = Packet::read(&reply_buf[0..amt])?;
             if let Packet::DATA { block_num, data } = reply_packet {
                 assert_eq!(client_block_num, block_num);
                 file.write_all(&data)?;
@@ -219,7 +219,7 @@ fn wrq_file_exists_test(server_addr: &SocketAddr) -> Result<()> {
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
-    let packet = Packet::read(PacketData::new(buf, amt))?;
+    let packet = Packet::read(&buf[0..amt])?;
     if let Packet::ERROR { code, .. } = packet {
         assert_eq!(code, ErrorCode::FileExists);
     } else {
@@ -241,7 +241,7 @@ fn rrq_file_not_found_test(server_addr: &SocketAddr) -> Result<()> {
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
-    let packet = Packet::read(PacketData::new(buf, amt))?;
+    let packet = Packet::read(&buf[0..amt])?;
     if let Packet::ERROR { code, .. } = packet {
         assert_eq!(code, ErrorCode::FileNotFound);
     } else {

@@ -8,7 +8,7 @@ macro_rules! packet {
         fn $name() {
             let bytes = $packet.clone().to_bytes();
             assert!(bytes.is_ok());
-            let packet = bytes.and_then(Packet::read);
+            let packet = bytes.and_then(|pd| Packet::read(pd.to_slice()));
             assert!(packet.is_ok());
             let _ = packet.map(|packet| { assert_eq!(packet, $packet); });
         }

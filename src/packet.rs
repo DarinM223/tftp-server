@@ -1,5 +1,5 @@
 use std::{fmt, result, str, io};
-use std::io::Write;
+use std::io::{Read, Write};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use std::cmp::*;
 use server::Read512;
@@ -109,39 +109,19 @@ pub const MODES: [&'static str; 3] = ["netascii", "octet", "mail"];
 pub const MAX_PACKET_SIZE: usize = 1024;
 pub const MAX_DATA_SIZE: usize = 516;
 
-/// The byte representation of a packet. Because many packets can
-/// be smaller than the maximum packet size, it contains a length
-/// parameter so that the actual packet size can be determined.
-pub struct PacketData {
-    bytes: [u8; MAX_PACKET_SIZE],
-    len: usize,
-}
+/// The byte representation of a packet
+pub struct PacketData(Vec<u8>);
 
 impl PacketData {
     pub fn new(bytes: [u8; MAX_PACKET_SIZE], len: usize) -> PacketData {
-        PacketData {
-            bytes: bytes,
-            len: len,
-        }
+        let mut v = vec![];
+        v.write_all(&bytes[..len]);
+        PacketData(v)
     }
 
     /// Returns a byte slice that can be sent through a socket.
     pub fn to_slice<'a>(&'a self) -> &'a [u8] {
-        &self.bytes[0..self.len]
-    }
-}
-
-impl Clone for PacketData {
-    fn clone(&self) -> PacketData {
-        let mut bytes = [0; MAX_PACKET_SIZE];
-        for i in 0..MAX_PACKET_SIZE {
-            bytes[i] = self.bytes[i];
-        }
-
-        PacketData {
-            bytes: bytes,
-            len: self.len,
-        }
+        self.0.as_slice()
     }
 }
 
@@ -156,8 +136,7 @@ pub enum Packet {
 
 impl Packet {
     /// Creates and returns a packet parsed from its byte representation.
-    pub fn read(pack_data: PacketData) -> Result<Packet> {
-        let mut bytes = &pack_data.bytes[..pack_data.len];
+    pub fn read(mut bytes: &[u8]) -> Result<Packet> {
         let opcode = OpCode::from_u16(bytes.read_u16::<BigEndian>()?)?;
         match opcode {
             OpCode::RRQ | OpCode::WRQ => read_rw_packet(opcode, &bytes),

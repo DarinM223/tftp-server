@@ -196,7 +196,7 @@ impl TftpServer {
             Some((amt, src)) => (amt, src),
             None => return Err(TftpError::NoneFromSocket),
         };
-        let packet = Packet::read(PacketData::new(buf, amt))?;
+        let packet = Packet::read(&buf[..amt])?;
 
         // Handle the RRQ or WRQ packet.
         let (file, block_num, send_packet) = match packet {
@@ -267,7 +267,7 @@ impl TftpServer {
                 Some((amt, _)) => amt,
                 None => return Err(TftpError::NoneFromSocket),
             };
-            let packet = Packet::read(PacketData::new(buf, amt))?;
+            let packet = Packet::read(&buf[..amt])?;
 
             match packet {
                 Packet::ACK(block_num) => handle_ack_packet(block_num, conn)?,
@@ -519,7 +519,7 @@ pub trait Read512 {
 
 impl<T> Read512 for T
 where
-    T: Read,
+    T: Read
 {
     fn read_512(&mut self, mut buf: &mut Vec<u8>) -> io::Result<usize> {
         self.take(512).read_to_end(&mut buf)
