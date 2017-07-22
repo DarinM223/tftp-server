@@ -7,7 +7,7 @@ use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::thread;
 use std::time::Duration;
-use tftp_server::packet::{ErrorCode, Packet, PacketData, MAX_PACKET_SIZE};
+use tftp_server::packet::{ErrorCode, Packet, MAX_PACKET_SIZE};
 use tftp_server::server::{create_socket, incr_block_num, Result, TftpServer};
 use tftp_server::server::Read512;
 
@@ -134,9 +134,8 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
             // Read and send data packet
             let mut buf = Vec::with_capacity(512);
             match file.read_512(&mut buf) {
-                Err(_) => break,
-                Ok(i) if i == 0 => break,
-                Ok(i) => i,
+                Err(_) | Ok(0) => break,
+                _ => {}
             };
             let data_packet = Packet::DATA {
                 block_num: block_num,
