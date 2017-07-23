@@ -60,14 +60,14 @@ impl From<TimerError> for TftpError {
 pub type Result<T> = result::Result<T, TftpError>;
 
 /// Trait used to inject filesystem IO handling into a server.
-/// A trivial default implementation is provided by FSAdapter.
-/// If you want to employ things like buffered IO, then it is necessary to provide
-/// an implementation for this trait and pass the implementing type to the server.
+/// A trivial default implementation is provided by `FSAdapter`.
+/// If you want to employ things like buffered IO, it can be done by providing
+/// an implementation for this trait and passing the implementing type to the server.
 pub trait IOAdapter {
     type R: Read + Sized;
     type W: Write + Sized;
-    fn open_read(filename: String) -> io::Result<Self::R>;
-    fn create_new(filename: String) -> io::Result<Self::W>;
+    fn open_read(&self, filename: String) -> io::Result<Self::R>;
+    fn create_new(&mut self, filename: String) -> io::Result<Self::W>;
 }
 
 /// Provides a simple, default implementation for IOAdapter.
@@ -76,13 +76,19 @@ pub struct FSAdapter;
 impl IOAdapter for FSAdapter {
     type R = File;
     type W = File;
-    fn open_read(filename: String) -> io::Result<File> {
+    fn open_read(&self, filename: String) -> io::Result<File> {
         File::open(filename)
     }
-    fn create_new(filename: String) -> io::Result<File> {
+    fn create_new(&mut self, filename: String) -> io::Result<File> {
         fs::OpenOptions::new().write(true).create_new(true).open(
             filename,
         )
+    }
+}
+
+impl Default for FSAdapter {
+    fn default() -> Self {
+        FSAdapter
     }
 }
 
@@ -119,7 +125,7 @@ struct ConnectionState<IO: IOAdapter> {
 
 pub type TftpServer = TftpServerImpl<FSAdapter>;
 
-pub struct TftpServerImpl<IO: IOAdapter> {
+pub struct TftpServerImpl<IO: IOAdapter + Default> {
     /// The ID of a new token used for generating different tokens.
     new_token: usize,
     /// The event loop for handling async events.
@@ -131,9 +137,11 @@ pub struct TftpServerImpl<IO: IOAdapter> {
     socket: UdpSocket,
     /// The separate UDP connections for handling multiple requests.
     connections: HashMap<Token, ConnectionState<IO>>,
+
+    io: IO,
 }
 
-impl<IO: IOAdapter> TftpServerImpl<IO> {
+impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     /// Creates a new TFTP server from a random open UDP port.
     pub fn new() -> Result<Self> {
         let poll = Poll::new()?;
@@ -158,6 +166,7 @@ impl<IO: IOAdapter> TftpServerImpl<IO> {
             timer: timer,
             socket: socket,
             connections: HashMap::new(),
+            io: Default::default(),
         })
     }
 
@@ -185,6 +194,7 @@ impl<IO: IOAdapter> TftpServerImpl<IO> {
             timer: timer,
             socket: socket,
             connections: HashMap::new(),
+            io: Default::default(),
         })
     }
 
@@ -225,8 +235,12 @@ impl<IO: IOAdapter> TftpServerImpl<IO> {
     ) -> Result<(Packet, Token)> {
         // Handle the RRQ or WRQ packet.
         let (io_handle, block_num, send_packet) = match packet {
-            Packet::RRQ { filename, mode } => ConnectionState::new_from_rrq(filename, &mode, src)?,
-            Packet::WRQ { filename, mode } => ConnectionState::new_from_wrq(filename, &mode, src)?,
+            Packet::RRQ { filename, mode } => {
+                ConnectionState::new_from_rrq(filename, &mode, src, &mut self.io)?
+            }
+            Packet::WRQ { filename, mode } => {
+                ConnectionState::new_from_wrq(filename, &mode, src, &mut self.io)?
+            }
             _ => return Err(TftpError::TftpError(ErrorCode::IllegalTFTP, *src)),
         };
 
@@ -322,7 +336,7 @@ impl<IO: IOAdapter> TftpServerImpl<IO> {
     /// Called for every event sent from the event loop. The event
     /// is a token that can either be from the server, from an open connection,
     /// or from a timeout timer for a connection.
-    pub fn handle_token(&mut self, token: Token) -> Result<()> {
+    fn handle_token(&mut self, token: Token) -> Result<()> {
         let mut buf = [0; MAX_PACKET_SIZE];
         match token {
             TIMER => self.handle_timer()?,
@@ -433,6 +447,7 @@ impl<IO: IOAdapter> ConnectionState<IO> {
         filename: String,
         mode: &str,
         addr: &SocketAddr,
+        io: &mut IO,
     ) -> Result<(RW<IO>, u16, Packet)> {
         info!(
             "Received RRQ packet with filename {} and mode {}",
@@ -444,7 +459,7 @@ impl<IO: IOAdapter> ConnectionState<IO> {
             return Err(TftpError::TftpError(ErrorCode::FileNotFound, *addr));
         }
 
-        let mut file = IO::open_read(filename).map_err(|_| {
+        let mut file = io.open_read(filename).map_err(|_| {
             TftpError::TftpError(ErrorCode::FileNotFound, *addr)
         })?;
         let block_num = 1;
@@ -465,6 +480,7 @@ impl<IO: IOAdapter> ConnectionState<IO> {
         filename: String,
         mode: &str,
         addr: &SocketAddr,
+        io: &mut IO,
     ) -> Result<(RW<IO>, u16, Packet)> {
         info!(
             "Received WRQ packet with filename {} and mode {}",
@@ -476,7 +492,7 @@ impl<IO: IOAdapter> ConnectionState<IO> {
             return Err(TftpError::TftpError(ErrorCode::FileNotFound, *addr));
         }
 
-        let file = IO::create_new(filename).map_err(|e| match e.kind() {
+        let file = io.create_new(filename).map_err(|e| match e.kind() {
             io::ErrorKind::AlreadyExists => TftpError::TftpError(ErrorCode::FileExists, *addr),
             _ => e.into(),
         })?;
