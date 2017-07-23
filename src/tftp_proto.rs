@@ -1,5 +1,5 @@
 use mio::*;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::collections::hash_map::Entry::Occupied;
 use packet::{ErrorCode, Packet};
 use server::{IOAdapter, Read512};
@@ -65,7 +65,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
     /// For RRQ and WRQ packets, the token must be a new one, not yet associated with current transfers.
     ///
     /// For DATA, ACK, and ERROR packets, the token must be the same one supplied with the initial RRQ/WRQ packet.
-    /// 
+    ///
     /// The token will remain uniquely associated with its connection,
     /// until `TftpResult::Done` or `TftpResult::Err` is returned, or until `timeout` is called.
     pub(crate) fn recv(&mut self, token: Token, packet: Packet) -> TftpResult {
