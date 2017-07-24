@@ -1,6 +1,7 @@
 use mio::*;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry::Occupied;
+use std::io::Write;
 use packet::{ErrorCode, Packet};
 use server::{IOAdapter, Read512};
 
@@ -32,9 +33,10 @@ pub enum TftpError {
 }
 
 struct Transfer<IO: IOAdapter> {
-    fread: IO::R,
+    fread: Option<IO::R>,
     sent_block_num: u16,
     sent_final: bool,
+    fwrite: Option<IO::W>,
 }
 
 /// The TFTP protocol and filesystem usage implementation,
@@ -86,9 +88,10 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                     self.xfers.insert(
                         token,
                         Transfer {
-                            fread,
+                            fread: Some(fread),
                             sent_block_num: 1,
                             sent_final: v.len() < 512,
+                            fwrite: None,
                         },
                     );
                     TftpResult::Reply(Packet::DATA {
@@ -118,7 +121,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                     } else {
                         let xfer = xfer.get_mut();
                         let mut v = vec![];
-                        xfer.fread.read_512(&mut v).unwrap();
+                        xfer.fread.as_mut().unwrap().read_512(&mut v).unwrap();
                         xfer.sent_final = v.len() < 512;
                         xfer.sent_block_num = xfer.sent_block_num.wrapping_add(1);
                         TftpResult::Reply(Packet::DATA {
@@ -130,7 +133,13 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                     TftpResult::Err(TftpError::InvalidTransferToken)
                 }
             }
-            Packet::DATA { .. } => {
+            Packet::DATA { block_num, data } => {
+                if let Occupied(mut xfer) = self.xfers.entry(token) {
+                    if xfer.get().fwrite.is_some() {
+                        xfer.get_mut().fwrite.as_mut().unwrap().write_all(data.as_slice()).unwrap();
+                        return TftpResult::Done(Some(Packet::ACK(block_num)));
+                    }
+                }
                 self.xfers.remove(&token);
                 TftpResult::Done(Some(Packet::ERROR {
                     code: ErrorCode::IllegalTFTP,
@@ -147,14 +156,23 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                         msg: "".to_owned(),
                     }));
                 }
-                TftpResult::Done(Some(Packet::ERROR {
-                    code: ErrorCode::FileExists,
-                    msg: "".to_owned(),
-                }))
-/*
-                if let Err(_) = self.io.open_read(filename) {
-                    return TftpResult::Err(TftpError::TransferAlreadyRunning);
-*/
+                if let Ok(mut fwrite) = self.io.create_new(filename) {
+                    self.xfers.insert(
+                        token,
+                        Transfer {
+                            fread: None,
+                            sent_block_num: 1,
+                            sent_final: false,
+                            fwrite: Some(fwrite),
+                        },
+                    );
+                    TftpResult::Reply(Packet::ACK(0))
+                } else {
+                    TftpResult::Done(Some(Packet::ERROR {
+                        code: ErrorCode::FileExists,
+                        msg: "".to_owned(),
+                    }))
+                }
             }
             _ => TftpResult::Err(TftpError::InvalidTransferToken),
         }

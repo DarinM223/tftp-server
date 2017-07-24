@@ -444,6 +444,35 @@ fn wrq_mail_gets_error() {
     );
 }
 
+#[test]
+fn wrq_small_file_ack_end() {
+    let mut iof = TestIoFactory::new();
+    let file = "textfile".to_owned();
+    iof.files.insert(file.clone(), 132);
+    let mut serv = TftpServerProto::new(iof);
+    let byte_gen = ByteGen::new(&file);
+    assert_eq!(
+        serv.recv(
+            Token(1),
+            Packet::WRQ {
+                filename: file,
+                mode: "octet".to_owned(),
+            },
+        ),
+        TftpResult::Reply(Packet::ACK(0))
+    );
+    assert_eq!(
+        serv.recv(
+            Token(1),
+            Packet::DATA {
+                block_num: 1,
+                data: byte_gen.take(132).collect(),
+            },
+        ),
+        TftpResult::Done(Some(Packet::ACK(1)))
+    );
+}
+
 struct TestIoFactory {
     server_files: HashSet<String>,
     files: HashMap<String, usize>,
@@ -548,15 +577,18 @@ impl Write for ExpectingWriter {
                 assert_eq!(*b, v);
                 wrote += 1;
             } else {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "wrote more than expected",
-                ));
+                panic!("wrote more than expected");
             }
         }
         Ok(wrote)
     }
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+impl Drop for ExpectingWriter {
+    fn drop(&mut self) {
+        let (_, sup) = self.gen.size_hint();
+        assert_eq!(sup, Some(0), "writer destroyed before all bytes were written");
     }
 }
