@@ -369,6 +369,81 @@ fn rrq_large_file_blocknum_wraparound() {
     );
 }
 
+#[test]
+fn rrq_small_file_wrq_already_running() {
+    let mut iof = TestIoFactory::new();
+    let file = "textfile".to_owned();
+    iof.files.insert(file.clone(), 132);
+    iof.server_files.insert(file.clone());
+    let mut serv = TftpServerProto::new(iof);
+    let byte_gen = ByteGen::new(&file);
+    assert_eq!(
+        serv.recv(
+            Token(2),
+            Packet::RRQ {
+                filename: file.clone(),
+                mode: "octet".to_owned(),
+            },
+        ),
+        TftpResult::Reply(Packet::DATA {
+            block_num: 1,
+            data: byte_gen.take(132).collect(),
+        })
+    );
+    assert_eq!(
+        serv.recv(
+            Token(2),
+            Packet::WRQ {
+                filename: file.clone(),
+                mode: "octet".to_owned(),
+            },
+        ),
+        TftpResult::Err(TftpError::TransferAlreadyRunning)
+    );
+}
+
+#[test]
+fn wrq_already_exists_error() {
+    let mut iof = TestIoFactory::new();
+    let file = "textfile".to_owned();
+    iof.files.insert(file.clone(), 132);
+    iof.server_files.insert(file.clone());
+    let mut serv = TftpServerProto::new(iof);
+    assert_eq!(
+        serv.recv(
+            Token(1),
+            Packet::WRQ {
+                filename: file,
+                mode: "octet".to_owned(),
+            },
+        ),
+        TftpResult::Done(Some(Packet::ERROR {
+            code: ErrorCode::FileExists,
+            msg: "".to_owned(),
+        }))
+    );
+}
+
+#[test]
+fn wrq_mail_gets_error() {
+    let iof = TestIoFactory::new();
+    let file = "textfile".to_owned();
+    let mut serv = TftpServerProto::new(iof);
+    assert_eq!(
+        serv.recv(
+            Token(1),
+            Packet::WRQ {
+                filename: file,
+                mode: "mail".to_owned(),
+            },
+        ),
+        TftpResult::Done(Some(Packet::ERROR {
+            code: ErrorCode::NoUser,
+            msg: "".to_owned(),
+        }))
+    );
+}
+
 struct TestIoFactory {
     server_files: HashSet<String>,
     files: HashMap<String, usize>,

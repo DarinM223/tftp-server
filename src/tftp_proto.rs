@@ -137,6 +137,25 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                     msg: "".to_owned(),
                 }))
             }
+            Packet::WRQ { filename, mode } => {
+                if self.xfers.contains_key(&token) {
+                    return TftpResult::Err(TftpError::TransferAlreadyRunning);
+                }
+                if mode == "mail" {
+                    return TftpResult::Done(Some(Packet::ERROR {
+                        code: ErrorCode::NoUser,
+                        msg: "".to_owned(),
+                    }));
+                }
+                TftpResult::Done(Some(Packet::ERROR {
+                    code: ErrorCode::FileExists,
+                    msg: "".to_owned(),
+                }))
+/*
+                if let Err(_) = self.io.open_read(filename) {
+                    return TftpResult::Err(TftpError::TransferAlreadyRunning);
+*/
+            }
             _ => TftpResult::Err(TftpError::InvalidTransferToken),
         }
     }
