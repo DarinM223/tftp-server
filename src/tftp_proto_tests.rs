@@ -10,11 +10,27 @@ use server::IOAdapter;
 use tftp_proto::*;
 
 #[test]
-fn no_answer_ack_no_xfer() {
+fn initial_ack_err() {
     let iof = TestIoFactory::new();
     let mut serv = TftpServerProto::new(iof);
     assert_eq!(
         serv.recv(Token(1), Packet::ACK(0)),
+        TftpResult::Err(TftpError::InvalidTransferToken)
+    );
+}
+
+#[test]
+fn initial_data_err() {
+    let iof = TestIoFactory::new();
+    let mut serv = TftpServerProto::new(iof);
+    assert_eq!(
+        serv.recv(
+            Token(1),
+            Packet::DATA {
+                block_num: 1,
+                data: vec![],
+            },
+        ),
         TftpResult::Err(TftpError::InvalidTransferToken)
     );
 }

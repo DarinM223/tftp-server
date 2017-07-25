@@ -85,6 +85,8 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                             .unwrap();
                         return TftpResult::Done(Some(Packet::ACK(block_num)));
                     }
+                } else {
+                    return TftpResult::Err(TftpError::InvalidTransferToken);
                 }
                 self.xfers.remove(&token);
                 TftpResult::Done(Some(Packet::ERROR {
