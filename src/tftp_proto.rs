@@ -72,71 +72,17 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
     /// until `TftpResult::Done` or `TftpResult::Err` is returned, or until `timeout` is called.
     pub(crate) fn recv(&mut self, token: Token, packet: Packet) -> TftpResult {
         match packet {
-            Packet::RRQ { filename, mode } => {
-                if mode == "mail" {
-                    return TftpResult::Done(Some(Packet::ERROR {
-                        code: ErrorCode::NoUser,
-                        msg: "".to_owned(),
-                    }));
-                }
-                if self.xfers.contains_key(&token) {
-                    return TftpResult::Err(TftpError::TransferAlreadyRunning);
-                }
-                if let Ok(mut fread) = self.io.open_read(filename) {
-                    let mut v = vec![];
-                    fread.read_512(&mut v).unwrap();
-                    self.xfers.insert(
-                        token,
-                        Transfer {
-                            fread: Some(fread),
-                            sent_block_num: 1,
-                            sent_final: v.len() < 512,
-                            fwrite: None,
-                        },
-                    );
-                    TftpResult::Reply(Packet::DATA {
-                        block_num: 1,
-                        data: v,
-                    })
-                } else {
-                    TftpResult::Done(Some(Packet::ERROR {
-                        code: ErrorCode::FileNotFound,
-                        msg: "".to_owned(),
-                    }))
-                }
-            }
-            Packet::ACK(ack_block) => {
-                if let Occupied(mut xfer) = self.xfers.entry(token) {
-                    if ack_block == xfer.get().sent_block_num.wrapping_sub(1) {
-                        TftpResult::Repeat
-                    } else if ack_block != xfer.get().sent_block_num {
-                        xfer.remove_entry();
-                        TftpResult::Done(Some(Packet::ERROR {
-                            code: ErrorCode::UnknownID,
-                            msg: "Incorrect block num in ACK".to_owned(),
-                        }))
-                    } else if xfer.get().sent_final {
-                        xfer.remove_entry();
-                        TftpResult::Done(None)
-                    } else {
-                        let xfer = xfer.get_mut();
-                        let mut v = vec![];
-                        xfer.fread.as_mut().unwrap().read_512(&mut v).unwrap();
-                        xfer.sent_final = v.len() < 512;
-                        xfer.sent_block_num = xfer.sent_block_num.wrapping_add(1);
-                        TftpResult::Reply(Packet::DATA {
-                            block_num: xfer.sent_block_num,
-                            data: v,
-                        })
-                    }
-                } else {
-                    TftpResult::Err(TftpError::InvalidTransferToken)
-                }
-            }
+            Packet::RRQ { filename, mode } => self.handle_rrq(token, &filename, &mode),
+            Packet::ACK(ack_block) => self.handle_ack(token, ack_block),
             Packet::DATA { block_num, data } => {
                 if let Occupied(mut xfer) = self.xfers.entry(token) {
                     if xfer.get().fwrite.is_some() {
-                        xfer.get_mut().fwrite.as_mut().unwrap().write_all(data.as_slice()).unwrap();
+                        xfer.get_mut()
+                            .fwrite
+                            .as_mut()
+                            .unwrap()
+                            .write_all(data.as_slice())
+                            .unwrap();
                         return TftpResult::Done(Some(Packet::ACK(block_num)));
                     }
                 }
@@ -175,6 +121,69 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                 }
             }
             _ => TftpResult::Err(TftpError::InvalidTransferToken),
+        }
+    }
+
+    fn handle_rrq(&mut self, token: Token, filename: &str, mode: &str) -> TftpResult {
+        if mode == "mail" {
+            return TftpResult::Done(Some(Packet::ERROR {
+                code: ErrorCode::NoUser,
+                msg: "".to_owned(),
+            }));
+        }
+        if self.xfers.contains_key(&token) {
+            return TftpResult::Err(TftpError::TransferAlreadyRunning);
+        }
+        if let Ok(mut fread) = self.io.open_read(filename) {
+            let mut v = vec![];
+            fread.read_512(&mut v).unwrap();
+            self.xfers.insert(
+                token,
+                Transfer {
+                    fread: Some(fread),
+                    sent_block_num: 1,
+                    sent_final: v.len() < 512,
+                    fwrite: None,
+                },
+            );
+            TftpResult::Reply(Packet::DATA {
+                block_num: 1,
+                data: v,
+            })
+        } else {
+            TftpResult::Done(Some(Packet::ERROR {
+                code: ErrorCode::FileNotFound,
+                msg: "".to_owned(),
+            }))
+        }
+    }
+
+    fn handle_ack(&mut self, token: Token, ack_block: u16) -> TftpResult {
+        if let Occupied(mut xfer) = self.xfers.entry(token) {
+            if ack_block == xfer.get().sent_block_num.wrapping_sub(1) {
+                TftpResult::Repeat
+            } else if ack_block != xfer.get().sent_block_num {
+                xfer.remove_entry();
+                TftpResult::Done(Some(Packet::ERROR {
+                    code: ErrorCode::UnknownID,
+                    msg: "Incorrect block num in ACK".to_owned(),
+                }))
+            } else if xfer.get().sent_final {
+                xfer.remove_entry();
+                TftpResult::Done(None)
+            } else {
+                let xfer = xfer.get_mut();
+                let mut v = vec![];
+                xfer.fread.as_mut().unwrap().read_512(&mut v).unwrap();
+                xfer.sent_final = v.len() < 512;
+                xfer.sent_block_num = xfer.sent_block_num.wrapping_add(1);
+                TftpResult::Reply(Packet::DATA {
+                    block_num: xfer.sent_block_num,
+                    data: v,
+                })
+            }
+        } else {
+            TftpResult::Err(TftpError::InvalidTransferToken)
         }
     }
 }

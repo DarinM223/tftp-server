@@ -589,6 +589,10 @@ impl Write for ExpectingWriter {
 impl Drop for ExpectingWriter {
     fn drop(&mut self) {
         let (_, sup) = self.gen.size_hint();
-        assert_eq!(sup, Some(0), "writer destroyed before all bytes were written");
+        assert_eq!(
+            sup,
+            Some(0),
+            "writer destroyed before all bytes were written"
+        );
     }
 }
