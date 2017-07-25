@@ -489,6 +489,55 @@ fn wrq_small_file_ack_end() {
     );
 }
 
+#[test]
+fn wrq_1_block_file() {
+    let mut iof = TestIoFactory::new();
+    let file = "textfile".to_owned();
+    iof.files.insert(file.clone(), 512);
+    let mut serv = TftpServerProto::new(iof);
+    let byte_gen = ByteGen::new(&file);
+    assert_eq!(
+        serv.recv(
+            Token(1),
+            Packet::WRQ {
+                filename: file,
+                mode: "octet".to_owned(),
+            },
+        ),
+        TftpResult::Reply(Packet::ACK(0))
+    );
+    assert_eq!(
+        serv.recv(
+            Token(1),
+            Packet::DATA {
+                block_num: 1,
+                data: byte_gen.take(512).collect(),
+            },
+        ),
+        TftpResult::Reply(Packet::ACK(1))
+    );
+    assert_eq!(
+        serv.recv(
+            Token(1),
+            Packet::DATA {
+                block_num: 2,
+                data: vec![],
+            },
+        ),
+        TftpResult::Done(Some(Packet::ACK(2)))
+    );
+    assert_eq!(
+        serv.recv(
+            Token(1),
+            Packet::DATA {
+                block_num: 2,
+                data: vec![],
+            },
+        ),
+        TftpResult::Err(TftpError::InvalidTransferToken)
+    );
+}
+
 struct TestIoFactory {
     server_files: HashSet<String>,
     files: HashMap<String, usize>,

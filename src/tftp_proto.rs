@@ -83,7 +83,12 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                             .unwrap()
                             .write_all(data.as_slice())
                             .unwrap();
-                        return TftpResult::Done(Some(Packet::ACK(block_num)));
+                        if data.len() < 512 {
+                            xfer.remove_entry();
+                            return TftpResult::Done(Some(Packet::ACK(block_num)));
+                        } else {
+                            return TftpResult::Reply(Packet::ACK(block_num));
+                        }
                     }
                 } else {
                     return TftpResult::Err(TftpError::InvalidTransferToken);
