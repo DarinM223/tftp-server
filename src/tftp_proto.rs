@@ -102,7 +102,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                         msg: "".to_owned(),
                     }));
                 }
-                if let Ok(mut fwrite) = self.io.create_new(filename) {
+                if let Ok(mut fwrite) = self.io.create_new(&filename) {
                     self.xfers.insert(
                         token,
                         Transfer {

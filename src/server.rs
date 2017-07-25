@@ -66,8 +66,8 @@ pub type Result<T> = result::Result<T, TftpError>;
 pub trait IOAdapter {
     type R: Read + Sized;
     type W: Write + Sized;
-    fn open_read(&self, filename: String) -> io::Result<Self::R>;
-    fn create_new(&mut self, filename: String) -> io::Result<Self::W>;
+    fn open_read(&self, filename: &str) -> io::Result<Self::R>;
+    fn create_new(&mut self, filename: &str) -> io::Result<Self::W>;
 }
 
 /// Provides a simple, default implementation for IOAdapter.
@@ -76,10 +76,10 @@ pub struct FSAdapter;
 impl IOAdapter for FSAdapter {
     type R = File;
     type W = File;
-    fn open_read(&self, filename: String) -> io::Result<File> {
+    fn open_read(&self, filename: &str) -> io::Result<File> {
         File::open(filename)
     }
-    fn create_new(&mut self, filename: String) -> io::Result<File> {
+    fn create_new(&mut self, filename: &str) -> io::Result<File> {
         fs::OpenOptions::new().write(true).create_new(true).open(
             filename,
         )
@@ -459,7 +459,7 @@ impl<IO: IOAdapter> ConnectionState<IO> {
             return Err(TftpError::TftpError(ErrorCode::FileNotFound, *addr));
         }
 
-        let mut file = io.open_read(filename).map_err(|_| {
+        let mut file = io.open_read(&filename).map_err(|_| {
             TftpError::TftpError(ErrorCode::FileNotFound, *addr)
         })?;
         let block_num = 1;
@@ -492,7 +492,7 @@ impl<IO: IOAdapter> ConnectionState<IO> {
             return Err(TftpError::TftpError(ErrorCode::FileNotFound, *addr));
         }
 
-        let file = io.create_new(filename).map_err(|e| match e.kind() {
+        let file = io.create_new(&filename).map_err(|e| match e.kind() {
             io::ErrorKind::AlreadyExists => TftpError::TftpError(ErrorCode::FileExists, *addr),
             _ => e.into(),
         })?;
