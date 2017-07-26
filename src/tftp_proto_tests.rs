@@ -75,22 +75,22 @@ fn rrq_mail_gets_error() {
     );
 }
 
-fn rrq_fixture(file_size: usize) -> (TftpServerProto<TestIoFactory>, String, ByteGen) {
+fn rrq_fixture(file_size: usize) -> (Token, TftpServerProto<TestIoFactory>, String, ByteGen) {
     let mut iof = TestIoFactory::new();
     let file = "textfile".to_owned();
     iof.files.insert(file.clone(), file_size);
     iof.server_files.insert(file.clone());
     let serv = TftpServerProto::new(iof);
     let byte_gen = ByteGen::new(&file);
-    (serv, file, byte_gen)
+    (Token(26), serv, file, byte_gen)
 }
 
 #[test]
 fn rrq_small_file_ack_end() {
-    let (mut serv, file, mut byte_gen) = rrq_fixture(132);
+    let (tk, mut serv, file, mut byte_gen) = rrq_fixture(132);
     assert_eq!(
         serv.recv(
-            Token(2),
+            tk,
             Packet::RRQ {
                 filename: file,
                 mode: "octet".to_owned(),
@@ -101,19 +101,19 @@ fn rrq_small_file_ack_end() {
             data: byte_gen.gen(132),
         })
     );
-    assert_eq!(serv.recv(Token(2), Packet::ACK(1)), TftpResult::Done(None));
+    assert_eq!(serv.recv(tk, Packet::ACK(1)), TftpResult::Done(None));
     assert_eq!(
-        serv.recv(Token(2), Packet::ACK(0)),
+        serv.recv(tk, Packet::ACK(0)),
         TftpResult::Err(TftpError::InvalidTransferToken)
     );
 }
 
 #[test]
 fn rrq_1_block_file() {
-    let (mut serv, file, mut byte_gen) = rrq_fixture(512);
+    let (tk, mut serv, file, mut byte_gen) = rrq_fixture(512);
     assert_eq!(
         serv.recv(
-            Token(2),
+            tk,
             Packet::RRQ {
                 filename: file,
                 mode: "octet".to_owned(),
@@ -125,21 +125,21 @@ fn rrq_1_block_file() {
         })
     );
     assert_eq!(
-        serv.recv(Token(2), Packet::ACK(1)),
+        serv.recv(tk, Packet::ACK(1)),
         TftpResult::Reply(Packet::DATA {
             block_num: 2,
             data: vec![],
         })
     );
-    assert_eq!(serv.recv(Token(2), Packet::ACK(2)), TftpResult::Done(None));
+    assert_eq!(serv.recv(tk, Packet::ACK(2)), TftpResult::Done(None));
 }
 
 #[test]
 fn rrq_small_file_ack_timeout_err() {
-    let (mut serv, file, mut byte_gen) = rrq_fixture(132);
+    let (tk, mut serv, file, mut byte_gen) = rrq_fixture(132);
     assert_eq!(
         serv.recv(
-            Token(2),
+            tk,
             Packet::RRQ {
                 filename: file,
                 mode: "octet".to_owned(),
@@ -150,19 +150,19 @@ fn rrq_small_file_ack_timeout_err() {
             data: byte_gen.gen(132),
         })
     );
-    serv.timeout(Token(2));
+    serv.timeout(tk);
     assert_eq!(
-        serv.recv(Token(2), Packet::ACK(1)),
+        serv.recv(tk, Packet::ACK(1)),
         TftpResult::Err(TftpError::InvalidTransferToken)
     );
 }
 
 #[test]
 fn rrq_small_file_ack_wrong_block() {
-    let (mut serv, file, mut byte_gen) = rrq_fixture(132);
+    let (tk, mut serv, file, mut byte_gen) = rrq_fixture(132);
     assert_eq!(
         serv.recv(
-            Token(2),
+            tk,
             Packet::RRQ {
                 filename: file,
                 mode: "octet".to_owned(),
@@ -174,24 +174,24 @@ fn rrq_small_file_ack_wrong_block() {
         })
     );
     assert_eq!(
-        serv.recv(Token(2), Packet::ACK(2)),
+        serv.recv(tk, Packet::ACK(2)),
         TftpResult::Done(Some(Packet::ERROR {
             code: ErrorCode::UnknownID,
             msg: "Incorrect block num in ACK".to_owned(),
         }))
     );
     assert_eq!(
-        serv.recv(Token(2), Packet::ACK(0)),
+        serv.recv(tk, Packet::ACK(0)),
         TftpResult::Err(TftpError::InvalidTransferToken)
     );
 }
 
 #[test]
 fn rrq_small_file_reply_with_data_illegal() {
-    let (mut serv, file, mut byte_gen) = rrq_fixture(132);
+    let (tk, mut serv, file, mut byte_gen) = rrq_fixture(132);
     assert_eq!(
         serv.recv(
-            Token(2),
+            tk,
             Packet::RRQ {
                 filename: file,
                 mode: "octet".to_owned(),
@@ -204,7 +204,7 @@ fn rrq_small_file_reply_with_data_illegal() {
     );
     assert_eq!(
         serv.recv(
-            Token(2),
+            tk,
             Packet::DATA {
                 data: vec![],
                 block_num: 1,
@@ -216,17 +216,17 @@ fn rrq_small_file_reply_with_data_illegal() {
         }))
     );
     assert_eq!(
-        serv.recv(Token(2), Packet::ACK(0)),
+        serv.recv(tk, Packet::ACK(0)),
         TftpResult::Err(TftpError::InvalidTransferToken)
     );
 }
 
 #[test]
 fn double_rrq() {
-    let (mut serv, file, mut byte_gen) = rrq_fixture(132);
+    let (tk, mut serv, file, mut byte_gen) = rrq_fixture(132);
     assert_eq!(
         serv.recv(
-            Token(2),
+            tk,
             Packet::RRQ {
                 filename: file.clone(),
                 mode: "octet".to_owned(),
@@ -239,7 +239,7 @@ fn double_rrq() {
     );
     assert_eq!(
         serv.recv(
-            Token(2),
+            tk,
             Packet::RRQ {
                 filename: file,
                 mode: "octet".to_owned(),
@@ -251,10 +251,10 @@ fn double_rrq() {
 
 #[test]
 fn rrq_2_blocks_ok() {
-    let (mut serv, file, mut byte_gen) = rrq_fixture(612);
+    let (tk, mut serv, file, mut byte_gen) = rrq_fixture(612);
     assert_eq!(
         serv.recv(
-            Token(5),
+            tk,
             Packet::RRQ {
                 filename: file,
                 mode: "octet".to_owned(),
@@ -266,21 +266,21 @@ fn rrq_2_blocks_ok() {
         })
     );
     assert_eq!(
-        serv.recv(Token(5), Packet::ACK(1)),
+        serv.recv(tk, Packet::ACK(1)),
         TftpResult::Reply(Packet::DATA {
             block_num: 2,
             data: byte_gen.gen(100),
         })
     );
-    assert_eq!(serv.recv(Token(5), Packet::ACK(2)), TftpResult::Done(None));
+    assert_eq!(serv.recv(tk, Packet::ACK(2)), TftpResult::Done(None));
 }
 
 #[test]
 fn rrq_2_blocks_second_lost_ack_repeat_ok() {
-    let (mut serv, file, mut byte_gen) = rrq_fixture(612);
+    let (tk, mut serv, file, mut byte_gen) = rrq_fixture(612);
     assert_eq!(
         serv.recv(
-            Token(5),
+            tk,
             Packet::RRQ {
                 filename: file,
                 mode: "octet".to_owned(),
@@ -292,24 +292,24 @@ fn rrq_2_blocks_second_lost_ack_repeat_ok() {
         })
     );
     assert_eq!(
-        serv.recv(Token(5), Packet::ACK(1)),
+        serv.recv(tk, Packet::ACK(1)),
         TftpResult::Reply(Packet::DATA {
             block_num: 2,
             data: byte_gen.gen(100),
         })
     );
     // assuming the second data got lost, and the client re-acks the first data
-    assert_eq!(serv.recv(Token(5), Packet::ACK(1)), TftpResult::Repeat);
-    assert_eq!(serv.recv(Token(5), Packet::ACK(2)), TftpResult::Done(None));
+    assert_eq!(serv.recv(tk, Packet::ACK(1)), TftpResult::Repeat);
+    assert_eq!(serv.recv(tk, Packet::ACK(2)), TftpResult::Done(None));
 }
 
 #[test]
 fn rrq_large_file_blocknum_wraparound() {
     let size_bytes = 512 * 70_000 + 85;
-    let (mut serv, file, mut byte_gen) = rrq_fixture(size_bytes);
+    let (tk, mut serv, file, mut byte_gen) = rrq_fixture(size_bytes);
     assert_eq!(
         serv.recv(
-            Token(5),
+            tk,
             Packet::RRQ {
                 filename: file,
                 mode: "octet".to_owned(),
@@ -327,7 +327,7 @@ fn rrq_large_file_blocknum_wraparound() {
     {
         let new_block = block.wrapping_add(1);
         assert_eq!(
-            serv.recv(Token(5), Packet::ACK(block)),
+            serv.recv(tk, Packet::ACK(block)),
             TftpResult::Reply(Packet::DATA {
                 block_num: new_block,
                 data: byte_gen.gen(512),
@@ -338,24 +338,24 @@ fn rrq_large_file_blocknum_wraparound() {
 
     let new_block = block.wrapping_add(1);
     assert_eq!(
-        serv.recv(Token(5), Packet::ACK(block)),
+        serv.recv(tk, Packet::ACK(block)),
         TftpResult::Reply(Packet::DATA {
             block_num: new_block,
             data: byte_gen.gen(85),
         })
     );
     assert_eq!(
-        serv.recv(Token(5), Packet::ACK(new_block)),
+        serv.recv(tk, Packet::ACK(new_block)),
         TftpResult::Done(None)
     );
 }
 
 #[test]
 fn rrq_small_file_wrq_already_running() {
-    let (mut serv, file, mut byte_gen) = rrq_fixture(132);
+    let (tk, mut serv, file, mut byte_gen) = rrq_fixture(132);
     assert_eq!(
         serv.recv(
-            Token(2),
+            tk,
             Packet::RRQ {
                 filename: file.clone(),
                 mode: "octet".to_owned(),
@@ -368,7 +368,7 @@ fn rrq_small_file_wrq_already_running() {
     );
     assert_eq!(
         serv.recv(
-            Token(2),
+            tk,
             Packet::WRQ {
                 filename: file,
                 mode: "octet".to_owned(),
