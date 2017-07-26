@@ -513,11 +513,10 @@ impl TestIoFactory {
 impl IOAdapter for TestIoFactory {
     type R = GeneratingReader;
     type W = ExpectingWriter;
-    fn open_read(&self, s: &str) -> io::Result<Self::R> {
-        let filename = s.to_owned();
-        if self.server_files.contains(&filename) {
-            let size = *self.files.get(&filename).unwrap();
-            Ok(GeneratingReader::new(&filename, size))
+    fn open_read(&self, filename: &str) -> io::Result<Self::R> {
+        if self.server_files.contains(filename) {
+            let size = *self.files.get(filename).unwrap();
+            Ok(GeneratingReader::new(filename, size))
         } else {
             Err(io::Error::new(
                 io::ErrorKind::NotFound,
@@ -525,17 +524,16 @@ impl IOAdapter for TestIoFactory {
             ))
         }
     }
-    fn create_new(&mut self, s: &str) -> io::Result<ExpectingWriter> {
-        let filename = s.to_owned();
-        if self.server_files.contains(&filename) {
+    fn create_new(&mut self, filename: &str) -> io::Result<ExpectingWriter> {
+        if self.server_files.contains(filename) {
             Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 "test file already there",
             ))
         } else {
-            self.server_files.insert(filename.clone());
-            let size = *self.files.get(&filename).unwrap();
-            Ok(ExpectingWriter::new(&filename, size))
+            self.server_files.insert(filename.into());
+            let size = *self.files.get(filename).unwrap();
+            Ok(ExpectingWriter::new(filename, size))
         }
     }
 }
