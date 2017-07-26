@@ -75,14 +75,19 @@ fn rrq_mail_gets_error() {
     );
 }
 
-#[test]
-fn rrq_small_file_ack_end() {
+fn rrq_fixture(file_size: usize) -> (TftpServerProto<TestIoFactory>, String, ByteGen) {
     let mut iof = TestIoFactory::new();
     let file = "textfile".to_owned();
-    iof.files.insert(file.clone(), 132);
+    iof.files.insert(file.clone(), file_size);
     iof.server_files.insert(file.clone());
-    let mut serv = TftpServerProto::new(iof);
+    let serv = TftpServerProto::new(iof);
     let byte_gen = ByteGen::new(&file);
+    (serv, file, byte_gen)
+}
+
+#[test]
+fn rrq_small_file_ack_end() {
+    let (mut serv, file, mut byte_gen) = rrq_fixture(132);
     assert_eq!(
         serv.recv(
             Token(2),
@@ -93,7 +98,7 @@ fn rrq_small_file_ack_end() {
         ),
         TftpResult::Reply(Packet::DATA {
             block_num: 1,
-            data: byte_gen.take(132).collect(),
+            data: byte_gen.gen(132),
         })
     );
     assert_eq!(serv.recv(Token(2), Packet::ACK(1)), TftpResult::Done(None));
@@ -105,12 +110,7 @@ fn rrq_small_file_ack_end() {
 
 #[test]
 fn rrq_1_block_file() {
-    let mut iof = TestIoFactory::new();
-    let file = "textfile".to_owned();
-    iof.files.insert(file.clone(), 512);
-    iof.server_files.insert(file.clone());
-    let mut serv = TftpServerProto::new(iof);
-    let byte_gen = ByteGen::new(&file);
+    let (mut serv, file, mut byte_gen) = rrq_fixture(512);
     assert_eq!(
         serv.recv(
             Token(2),
@@ -121,7 +121,7 @@ fn rrq_1_block_file() {
         ),
         TftpResult::Reply(Packet::DATA {
             block_num: 1,
-            data: byte_gen.take(512).collect(),
+            data: byte_gen.gen(512),
         })
     );
     assert_eq!(
@@ -136,12 +136,7 @@ fn rrq_1_block_file() {
 
 #[test]
 fn rrq_small_file_ack_timeout_err() {
-    let mut iof = TestIoFactory::new();
-    let file = "textfile".to_owned();
-    iof.files.insert(file.clone(), 132);
-    iof.server_files.insert(file.clone());
-    let mut serv = TftpServerProto::new(iof);
-    let byte_gen = ByteGen::new(&file);
+    let (mut serv, file, mut byte_gen) = rrq_fixture(132);
     assert_eq!(
         serv.recv(
             Token(2),
@@ -152,7 +147,7 @@ fn rrq_small_file_ack_timeout_err() {
         ),
         TftpResult::Reply(Packet::DATA {
             block_num: 1,
-            data: byte_gen.take(132).collect(),
+            data: byte_gen.gen(132),
         })
     );
     serv.timeout(Token(2));
@@ -164,12 +159,7 @@ fn rrq_small_file_ack_timeout_err() {
 
 #[test]
 fn rrq_small_file_ack_wrong_block() {
-    let mut iof = TestIoFactory::new();
-    let file = "textfile".to_owned();
-    iof.files.insert(file.clone(), 132);
-    iof.server_files.insert(file.clone());
-    let mut serv = TftpServerProto::new(iof);
-    let byte_gen = ByteGen::new(&file);
+    let (mut serv, file, mut byte_gen) = rrq_fixture(132);
     assert_eq!(
         serv.recv(
             Token(2),
@@ -180,7 +170,7 @@ fn rrq_small_file_ack_wrong_block() {
         ),
         TftpResult::Reply(Packet::DATA {
             block_num: 1,
-            data: byte_gen.take(132).collect(),
+            data: byte_gen.gen(132),
         })
     );
     assert_eq!(
@@ -198,12 +188,7 @@ fn rrq_small_file_ack_wrong_block() {
 
 #[test]
 fn rrq_small_file_reply_with_data_illegal() {
-    let mut iof = TestIoFactory::new();
-    let file = "textfile".to_owned();
-    iof.files.insert(file.clone(), 132);
-    iof.server_files.insert(file.clone());
-    let mut serv = TftpServerProto::new(iof);
-    let byte_gen = ByteGen::new(&file);
+    let (mut serv, file, mut byte_gen) = rrq_fixture(132);
     assert_eq!(
         serv.recv(
             Token(2),
@@ -214,7 +199,7 @@ fn rrq_small_file_reply_with_data_illegal() {
         ),
         TftpResult::Reply(Packet::DATA {
             block_num: 1,
-            data: byte_gen.take(132).collect(),
+            data: byte_gen.gen(132),
         })
     );
     assert_eq!(
@@ -238,12 +223,7 @@ fn rrq_small_file_reply_with_data_illegal() {
 
 #[test]
 fn double_rrq() {
-    let mut iof = TestIoFactory::new();
-    let file = "textfile".to_owned();
-    iof.files.insert(file.clone(), 132);
-    iof.server_files.insert(file.clone());
-    let mut serv = TftpServerProto::new(iof);
-    let byte_gen = ByteGen::new(&file);
+    let (mut serv, file, mut byte_gen) = rrq_fixture(132);
     assert_eq!(
         serv.recv(
             Token(2),
@@ -254,7 +234,7 @@ fn double_rrq() {
         ),
         TftpResult::Reply(Packet::DATA {
             block_num: 1,
-            data: byte_gen.take(132).collect(),
+            data: byte_gen.gen(132),
         })
     );
     assert_eq!(
@@ -271,12 +251,7 @@ fn double_rrq() {
 
 #[test]
 fn rrq_2_blocks_ok() {
-    let mut iof = TestIoFactory::new();
-    let file = "textfile".to_owned();
-    iof.files.insert(file.clone(), 612);
-    iof.server_files.insert(file.clone());
-    let mut serv = TftpServerProto::new(iof);
-    let mut byte_gen = ByteGen::new(&file);
+    let (mut serv, file, mut byte_gen) = rrq_fixture(612);
     assert_eq!(
         serv.recv(
             Token(5),
@@ -287,14 +262,14 @@ fn rrq_2_blocks_ok() {
         ),
         TftpResult::Reply(Packet::DATA {
             block_num: 1,
-            data: byte_gen.borrow_mut().take(512).collect(),
+            data: byte_gen.gen(512),
         })
     );
     assert_eq!(
         serv.recv(Token(5), Packet::ACK(1)),
         TftpResult::Reply(Packet::DATA {
             block_num: 2,
-            data: byte_gen.take(100).collect(),
+            data: byte_gen.gen(100),
         })
     );
     assert_eq!(serv.recv(Token(5), Packet::ACK(2)), TftpResult::Done(None));
@@ -302,12 +277,7 @@ fn rrq_2_blocks_ok() {
 
 #[test]
 fn rrq_2_blocks_second_lost_ack_repeat_ok() {
-    let mut iof = TestIoFactory::new();
-    let file = "textfile".to_owned();
-    iof.files.insert(file.clone(), 612);
-    iof.server_files.insert(file.clone());
-    let mut serv = TftpServerProto::new(iof);
-    let mut byte_gen = ByteGen::new(&file);
+    let (mut serv, file, mut byte_gen) = rrq_fixture(612);
     assert_eq!(
         serv.recv(
             Token(5),
@@ -318,14 +288,14 @@ fn rrq_2_blocks_second_lost_ack_repeat_ok() {
         ),
         TftpResult::Reply(Packet::DATA {
             block_num: 1,
-            data: byte_gen.borrow_mut().take(512).collect(),
+            data: byte_gen.gen(512),
         })
     );
     assert_eq!(
         serv.recv(Token(5), Packet::ACK(1)),
         TftpResult::Reply(Packet::DATA {
             block_num: 2,
-            data: byte_gen.take(100).collect(),
+            data: byte_gen.gen(100),
         })
     );
     // assuming the second data got lost, and the client re-acks the first data
@@ -335,13 +305,8 @@ fn rrq_2_blocks_second_lost_ack_repeat_ok() {
 
 #[test]
 fn rrq_large_file_blocknum_wraparound() {
-    let mut iof = TestIoFactory::new();
-    let file = "textfile".to_owned();
     let size_bytes = 512 * 70_000 + 85;
-    iof.files.insert(file.clone(), size_bytes);
-    iof.server_files.insert(file.clone());
-    let mut serv = TftpServerProto::new(iof);
-    let mut byte_gen = ByteGen::new(&file);
+    let (mut serv, file, mut byte_gen) = rrq_fixture(size_bytes);
     assert_eq!(
         serv.recv(
             Token(5),
@@ -352,7 +317,7 @@ fn rrq_large_file_blocknum_wraparound() {
         ),
         TftpResult::Reply(Packet::DATA {
             block_num: 1,
-            data: byte_gen.borrow_mut().take(512).collect(),
+            data: byte_gen.gen(512),
         })
     );
 
@@ -365,7 +330,7 @@ fn rrq_large_file_blocknum_wraparound() {
             serv.recv(Token(5), Packet::ACK(block)),
             TftpResult::Reply(Packet::DATA {
                 block_num: new_block,
-                data: byte_gen.borrow_mut().take(512).collect(),
+                data: byte_gen.gen(512),
             })
         );
         block = new_block;
@@ -376,7 +341,7 @@ fn rrq_large_file_blocknum_wraparound() {
         serv.recv(Token(5), Packet::ACK(block)),
         TftpResult::Reply(Packet::DATA {
             block_num: new_block,
-            data: byte_gen.take(85).collect(),
+            data: byte_gen.gen(85),
         })
     );
     assert_eq!(
@@ -387,12 +352,7 @@ fn rrq_large_file_blocknum_wraparound() {
 
 #[test]
 fn rrq_small_file_wrq_already_running() {
-    let mut iof = TestIoFactory::new();
-    let file = "textfile".to_owned();
-    iof.files.insert(file.clone(), 132);
-    iof.server_files.insert(file.clone());
-    let mut serv = TftpServerProto::new(iof);
-    let byte_gen = ByteGen::new(&file);
+    let (mut serv, file, mut byte_gen) = rrq_fixture(132);
     assert_eq!(
         serv.recv(
             Token(2),
@@ -403,7 +363,7 @@ fn rrq_small_file_wrq_already_running() {
         ),
         TftpResult::Reply(Packet::DATA {
             block_num: 1,
-            data: byte_gen.take(132).collect(),
+            data: byte_gen.gen(132),
         })
     );
     assert_eq!(
@@ -466,7 +426,7 @@ fn wrq_small_file_ack_end() {
     let file = "textfile".to_owned();
     iof.files.insert(file.clone(), 132);
     let mut serv = TftpServerProto::new(iof);
-    let byte_gen = ByteGen::new(&file);
+    let mut byte_gen = ByteGen::new(&file);
     assert_eq!(
         serv.recv(
             Token(1),
@@ -482,7 +442,7 @@ fn wrq_small_file_ack_end() {
             Token(1),
             Packet::DATA {
                 block_num: 1,
-                data: byte_gen.take(132).collect(),
+                data: byte_gen.gen(132),
             },
         ),
         TftpResult::Done(Some(Packet::ACK(1)))
@@ -495,7 +455,7 @@ fn wrq_1_block_file() {
     let file = "textfile".to_owned();
     iof.files.insert(file.clone(), 512);
     let mut serv = TftpServerProto::new(iof);
-    let byte_gen = ByteGen::new(&file);
+    let mut byte_gen = ByteGen::new(&file);
     assert_eq!(
         serv.recv(
             Token(1),
@@ -511,7 +471,7 @@ fn wrq_1_block_file() {
             Token(1),
             Packet::DATA {
                 block_num: 1,
-                data: byte_gen.take(512).collect(),
+                data: byte_gen.gen(512),
             },
         ),
         TftpResult::Reply(Packet::ACK(1))
@@ -592,6 +552,9 @@ impl ByteGen {
             v ^= b;
         }
         ByteGen { crt: v, count: 0 }
+    }
+    fn gen(&mut self, n: usize) -> Vec<u8> {
+        self.borrow_mut().take(n).collect()
     }
 }
 impl Iterator for ByteGen {
