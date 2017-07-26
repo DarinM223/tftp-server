@@ -45,12 +45,12 @@ fn rrq_no_file_gets_error() {
             Token(1),
             Packet::RRQ {
                 filename: file,
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Done(Some(Packet::ERROR {
             code: ErrorCode::FileNotFound,
-            msg: "".to_owned(),
+            msg: "".into(),
         }))
     );
 }
@@ -65,12 +65,12 @@ fn rrq_mail_gets_error() {
             Token(1),
             Packet::RRQ {
                 filename: file,
-                mode: "mail".to_owned(),
+                mode: "mail".into(),
             },
         ),
         TftpResult::Done(Some(Packet::ERROR {
             code: ErrorCode::NoUser,
-            msg: "".to_owned(),
+            msg: "".into(),
         }))
     );
 }
@@ -93,7 +93,7 @@ fn rrq_small_file_ack_end() {
             tk,
             Packet::RRQ {
                 filename: file,
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Reply(Packet::DATA {
@@ -116,7 +116,7 @@ fn rrq_1_block_file() {
             tk,
             Packet::RRQ {
                 filename: file,
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Reply(Packet::DATA {
@@ -142,7 +142,7 @@ fn rrq_small_file_ack_timeout_err() {
             tk,
             Packet::RRQ {
                 filename: file,
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Reply(Packet::DATA {
@@ -165,7 +165,7 @@ fn rrq_small_file_ack_wrong_block() {
             tk,
             Packet::RRQ {
                 filename: file,
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Reply(Packet::DATA {
@@ -177,7 +177,7 @@ fn rrq_small_file_ack_wrong_block() {
         serv.recv(tk, Packet::ACK(2)),
         TftpResult::Done(Some(Packet::ERROR {
             code: ErrorCode::UnknownID,
-            msg: "Incorrect block num in ACK".to_owned(),
+            msg: "Incorrect block num in ACK".into(),
         }))
     );
     assert_eq!(
@@ -194,7 +194,7 @@ fn rrq_small_file_reply_with_data_illegal() {
             tk,
             Packet::RRQ {
                 filename: file,
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Reply(Packet::DATA {
@@ -212,7 +212,7 @@ fn rrq_small_file_reply_with_data_illegal() {
         ),
         TftpResult::Done(Some(Packet::ERROR {
             code: ErrorCode::IllegalTFTP,
-            msg: "".to_owned(),
+            msg: "".into(),
         }))
     );
     assert_eq!(
@@ -229,7 +229,7 @@ fn double_rrq() {
             tk,
             Packet::RRQ {
                 filename: file.clone(),
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Reply(Packet::DATA {
@@ -242,7 +242,7 @@ fn double_rrq() {
             tk,
             Packet::RRQ {
                 filename: file,
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Err(TftpError::TransferAlreadyRunning)
@@ -257,7 +257,7 @@ fn rrq_2_blocks_ok() {
             tk,
             Packet::RRQ {
                 filename: file,
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Reply(Packet::DATA {
@@ -283,7 +283,7 @@ fn rrq_2_blocks_second_lost_ack_repeat_ok() {
             tk,
             Packet::RRQ {
                 filename: file,
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Reply(Packet::DATA {
@@ -312,7 +312,7 @@ fn rrq_large_file_blocknum_wraparound() {
             tk,
             Packet::RRQ {
                 filename: file,
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Reply(Packet::DATA {
@@ -358,7 +358,7 @@ fn rrq_small_file_wrq_already_running() {
             tk,
             Packet::RRQ {
                 filename: file.clone(),
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Reply(Packet::DATA {
@@ -371,7 +371,7 @@ fn rrq_small_file_wrq_already_running() {
             tk,
             Packet::WRQ {
                 filename: file,
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Err(TftpError::TransferAlreadyRunning)
@@ -390,12 +390,12 @@ fn wrq_already_exists_error() {
             Token(1),
             Packet::WRQ {
                 filename: file,
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Done(Some(Packet::ERROR {
             code: ErrorCode::FileExists,
-            msg: "".to_owned(),
+            msg: "".into(),
         }))
     );
 }
@@ -410,12 +410,12 @@ fn wrq_mail_gets_error() {
             Token(1),
             Packet::WRQ {
                 filename: file,
-                mode: "mail".to_owned(),
+                mode: "mail".into(),
             },
         ),
         TftpResult::Done(Some(Packet::ERROR {
             code: ErrorCode::NoUser,
-            msg: "".to_owned(),
+            msg: "".into(),
         }))
     );
 }
@@ -432,7 +432,7 @@ fn wrq_small_file_ack_end() {
             Token(1),
             Packet::WRQ {
                 filename: file,
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Reply(Packet::ACK(0))
@@ -461,7 +461,7 @@ fn wrq_1_block_file() {
             Token(1),
             Packet::WRQ {
                 filename: file,
-                mode: "octet".to_owned(),
+                mode: "octet".into(),
             },
         ),
         TftpResult::Reply(Packet::ACK(0))
