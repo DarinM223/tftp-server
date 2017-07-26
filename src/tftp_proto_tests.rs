@@ -92,7 +92,7 @@ fn rrq_small_file_ack_end() {
         serv.recv(
             Token(2),
             Packet::RRQ {
-                filename: file.clone(),
+                filename: file,
                 mode: "octet".to_owned(),
             },
         ),
@@ -115,7 +115,7 @@ fn rrq_1_block_file() {
         serv.recv(
             Token(2),
             Packet::RRQ {
-                filename: file.clone(),
+                filename: file,
                 mode: "octet".to_owned(),
             },
         ),
@@ -128,7 +128,7 @@ fn rrq_1_block_file() {
         serv.recv(Token(2), Packet::ACK(1)),
         TftpResult::Reply(Packet::DATA {
             block_num: 2,
-            data: Vec::new(),
+            data: vec![],
         })
     );
     assert_eq!(serv.recv(Token(2), Packet::ACK(2)), TftpResult::Done(None));
@@ -141,7 +141,7 @@ fn rrq_small_file_ack_timeout_err() {
         serv.recv(
             Token(2),
             Packet::RRQ {
-                filename: file.clone(),
+                filename: file,
                 mode: "octet".to_owned(),
             },
         ),
@@ -164,7 +164,7 @@ fn rrq_small_file_ack_wrong_block() {
         serv.recv(
             Token(2),
             Packet::RRQ {
-                filename: file.clone(),
+                filename: file,
                 mode: "octet".to_owned(),
             },
         ),
@@ -193,7 +193,7 @@ fn rrq_small_file_reply_with_data_illegal() {
         serv.recv(
             Token(2),
             Packet::RRQ {
-                filename: file.clone(),
+                filename: file,
                 mode: "octet".to_owned(),
             },
         ),
@@ -206,7 +206,7 @@ fn rrq_small_file_reply_with_data_illegal() {
         serv.recv(
             Token(2),
             Packet::DATA {
-                data: Vec::new(),
+                data: vec![],
                 block_num: 1,
             },
         ),
@@ -241,7 +241,7 @@ fn double_rrq() {
         serv.recv(
             Token(2),
             Packet::RRQ {
-                filename: file.clone(),
+                filename: file,
                 mode: "octet".to_owned(),
             },
         ),
@@ -256,7 +256,7 @@ fn rrq_2_blocks_ok() {
         serv.recv(
             Token(5),
             Packet::RRQ {
-                filename: file.clone(),
+                filename: file,
                 mode: "octet".to_owned(),
             },
         ),
@@ -282,7 +282,7 @@ fn rrq_2_blocks_second_lost_ack_repeat_ok() {
         serv.recv(
             Token(5),
             Packet::RRQ {
-                filename: file.clone(),
+                filename: file,
                 mode: "octet".to_owned(),
             },
         ),
@@ -311,7 +311,7 @@ fn rrq_large_file_blocknum_wraparound() {
         serv.recv(
             Token(5),
             Packet::RRQ {
-                filename: file.clone(),
+                filename: file,
                 mode: "octet".to_owned(),
             },
         ),
@@ -370,7 +370,7 @@ fn rrq_small_file_wrq_already_running() {
         serv.recv(
             Token(2),
             Packet::WRQ {
-                filename: file.clone(),
+                filename: file,
                 mode: "octet".to_owned(),
             },
         ),
