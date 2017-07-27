@@ -123,7 +123,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                         token,
                         Transfer {
                             fread: None,
-                            expected_block_num: 0,
+                            expected_block_num: 1,
                             sent_final: false,
                             fwrite: Some(fwrite),
                         },
