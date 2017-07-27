@@ -57,12 +57,10 @@ fn rrq_no_file_gets_error() {
 
 #[test]
 fn rrq_mail_gets_error() {
-    let iof = TestIoFactory::new();
-    let file = "textfile".to_owned();
-    let mut server = TftpServerProto::new(iof);
+    let (token, mut server, file, _) = rrq_fixture(132);
     assert_eq!(
         server.rx(
-            Token(1),
+            token,
             Packet::RRQ {
                 filename: file,
                 mode: "mail".into(),
@@ -399,14 +397,21 @@ fn wrq_already_exists_error() {
     );
 }
 
+fn wrq_fixture(file_size: usize) -> (Token, TftpServerProto<TestIoFactory>, String, ByteGen) {
+    let mut iof = TestIoFactory::new();
+    let file = "textfile".to_owned();
+    iof.files.insert(file.clone(), file_size);
+    let serv = TftpServerProto::new(iof);
+    let file_bytes = ByteGen::new(&file);
+    (Token(26), serv, file, file_bytes)
+}
+
 #[test]
 fn wrq_mail_gets_error() {
-    let iof = TestIoFactory::new();
-    let file = "textfile".to_owned();
-    let mut server = TftpServerProto::new(iof);
+    let (token, mut server, file, _) = wrq_fixture(200);
     assert_eq!(
         server.rx(
-            Token(1),
+            token,
             Packet::WRQ {
                 filename: file,
                 mode: "mail".into(),
@@ -421,14 +426,10 @@ fn wrq_mail_gets_error() {
 
 #[test]
 fn wrq_small_file_ack_end() {
-    let mut iof = TestIoFactory::new();
-    let file = "textfile".to_owned();
-    iof.files.insert(file.clone(), 132);
-    let mut server = TftpServerProto::new(iof);
-    let mut file_bytes = ByteGen::new(&file);
+    let (token, mut server, file, mut file_bytes) = wrq_fixture(132);
     assert_eq!(
         server.rx(
-            Token(1),
+            token,
             Packet::WRQ {
                 filename: file,
                 mode: "octet".into(),
@@ -438,7 +439,7 @@ fn wrq_small_file_ack_end() {
     );
     assert_eq!(
         server.rx(
-            Token(1),
+            token,
             Packet::DATA {
                 block_num: 1,
                 data: file_bytes.gen(132),
@@ -450,14 +451,10 @@ fn wrq_small_file_ack_end() {
 
 #[test]
 fn wrq_1_block_file() {
-    let mut iof = TestIoFactory::new();
-    let file = "textfile".to_owned();
-    iof.files.insert(file.clone(), 512);
-    let mut server = TftpServerProto::new(iof);
-    let mut file_bytes = ByteGen::new(&file);
+    let (token, mut server, file, mut file_bytes) = wrq_fixture(512);
     assert_eq!(
         server.rx(
-            Token(1),
+            token,
             Packet::WRQ {
                 filename: file,
                 mode: "octet".into(),
@@ -467,7 +464,7 @@ fn wrq_1_block_file() {
     );
     assert_eq!(
         server.rx(
-            Token(1),
+            token,
             Packet::DATA {
                 block_num: 1,
                 data: file_bytes.gen(512),
@@ -477,7 +474,7 @@ fn wrq_1_block_file() {
     );
     assert_eq!(
         server.rx(
-            Token(1),
+            token,
             Packet::DATA {
                 block_num: 2,
                 data: vec![],
@@ -487,7 +484,7 @@ fn wrq_1_block_file() {
     );
     assert_eq!(
         server.rx(
-            Token(1),
+            token,
             Packet::DATA {
                 block_num: 2,
                 data: vec![],
@@ -499,12 +496,7 @@ fn wrq_1_block_file() {
 
 #[test]
 fn wrq_small_file_reply_with_ack_illegal() {
-    let mut iof = TestIoFactory::new();
-    let file = "textfile".to_owned();
-    iof.files.insert(file.clone(), 512);
-    let mut server = TftpServerProto::new(iof);
-    let mut file_bytes = ByteGen::new(&file);
-    let token = Token(1);
+    let (token, mut server, file, mut file_bytes) = wrq_fixture(512);
     assert_eq!(
         server.rx(
             token,
@@ -517,7 +509,7 @@ fn wrq_small_file_reply_with_ack_illegal() {
     );
     assert_eq!(
         server.rx(
-            Token(1),
+            token,
             Packet::DATA {
                 block_num: 1,
                 data: file_bytes.gen(512),
