@@ -79,6 +79,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
             Packet::DATA { block_num, data } => {
                 if let Occupied(mut xfer) = self.xfers.entry(token) {
                     if block_num != xfer.get().sent_block_num {
+                        xfer.remove_entry();
                         return TftpResult::Done(Some(Packet::ERROR {
                             code: ErrorCode::IllegalTFTP,
                             msg: "Data packet lost".to_owned(),

@@ -576,6 +576,16 @@ fn wrq_small_file_block_id_not_1_err() {
             msg: "Data packet lost".to_owned(),
         }))
     );
+    assert_eq!(
+        server.rx(
+            token,
+            Packet::DATA {
+                block_num: 1,
+                data: vec![],
+            },
+        ),
+        TftpResult::Err(TftpError::InvalidTransferToken)
+    );
 }
 
 struct TestIoFactory {
