@@ -182,13 +182,19 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
 
     fn handle_data(&mut self, token: Token, block_num: u16, data: Vec<u8>) -> TftpResult {
         if let Occupied(mut xfer) = self.xfers.entry(token) {
-            if block_num != xfer.get().expected_block_num {
+            if xfer.get().fread.is_some() {
+                xfer.remove_entry();
+                TftpResult::Done(Some(Packet::ERROR {
+                    code: ErrorCode::IllegalTFTP,
+                    msg: "".to_owned(),
+                }))
+            } else if block_num != xfer.get().expected_block_num {
                 xfer.remove_entry();
                 TftpResult::Done(Some(Packet::ERROR {
                     code: ErrorCode::IllegalTFTP,
                     msg: "Data packet lost".to_owned(),
                 }))
-            } else if xfer.get().fwrite.is_some() {
+            } else {
                 xfer.get_mut()
                     .fwrite
                     .as_mut()
@@ -202,12 +208,6 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                 } else {
                     TftpResult::Reply(Packet::ACK(block_num))
                 }
-            } else {
-                xfer.remove_entry();
-                TftpResult::Done(Some(Packet::ERROR {
-                    code: ErrorCode::IllegalTFTP,
-                    msg: "".to_owned(),
-                }))
             }
         } else {
             TftpResult::Err(TftpError::InvalidTransferToken)
