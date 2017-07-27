@@ -62,15 +62,17 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
         self.xfers.remove(&token);
     }
 
-    /// Signals the receipt of a packet.
+    /// Signals the receipt of a packet. with an associated token.
     ///
-    /// For RRQ and WRQ packets, the token must be a new one, not yet associated with current transfers.
+    /// For RRQ and WRQ packets, the token must be a new one,
+    /// not yet associated with current transfers.
     ///
-    /// For DATA, ACK, and ERROR packets, the token must be the same one supplied with the initial RRQ/WRQ packet.
+    /// For DATA, ACK, and ERROR packets, the token must be the same one
+    /// supplied with the initial RRQ/WRQ packet.
     ///
     /// The token will remain uniquely associated with its connection,
     /// until `TftpResult::Done` or `TftpResult::Err` is returned, or until `timeout` is called.
-    pub(crate) fn recv(&mut self, token: Token, packet: Packet) -> TftpResult {
+    pub(crate) fn rx(&mut self, token: Token, packet: Packet) -> TftpResult {
         match packet {
             Packet::RRQ { filename, mode } => self.handle_rrq(token, &filename, &mode),
             Packet::ACK(ack_block) => self.handle_ack(token, ack_block),
