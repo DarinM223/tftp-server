@@ -169,7 +169,13 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
 
     fn handle_ack(&mut self, token: Token, ack_block: u16) -> TftpResult {
         if let Occupied(mut xfer) = self.xfers.entry(token) {
-            if ack_block == xfer.get().sent_block_num.wrapping_sub(1) {
+            if xfer.get().fwrite.is_some() {
+                xfer.remove_entry();
+                TftpResult::Done(Some(Packet::ERROR {
+                    code: ErrorCode::IllegalTFTP,
+                    msg: "".to_owned(),
+                }))
+            } else if ack_block == xfer.get().sent_block_num.wrapping_sub(1) {
                 TftpResult::Repeat
             } else if ack_block != xfer.get().sent_block_num {
                 xfer.remove_entry();
