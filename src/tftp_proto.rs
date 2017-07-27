@@ -75,69 +75,39 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
     pub(crate) fn rx(&mut self, token: Token, packet: Packet) -> TftpResult {
         match packet {
             Packet::RRQ { filename, mode } => self.handle_rrq(token, &filename, &mode),
+            Packet::WRQ { filename, mode } => self.handle_wrq(token, &filename, &mode),
+            Packet::DATA { block_num, data } => self.handle_data(token, block_num, data),
             Packet::ACK(ack_block) => self.handle_ack(token, ack_block),
-            Packet::DATA { block_num, data } => {
-                if let Occupied(mut xfer) = self.xfers.entry(token) {
-                    if block_num != xfer.get().expected_block_num {
-                        xfer.remove_entry();
-                        TftpResult::Done(Some(Packet::ERROR {
-                            code: ErrorCode::IllegalTFTP,
-                            msg: "Data packet lost".to_owned(),
-                        }))
-                    } else if xfer.get().fwrite.is_some() {
-                        xfer.get_mut()
-                            .fwrite
-                            .as_mut()
-                            .unwrap()
-                            .write_all(data.as_slice())
-                            .unwrap();
-                        xfer.get_mut().expected_block_num = block_num + 1;
-                        if data.len() < 512 {
-                            xfer.remove_entry();
-                            TftpResult::Done(Some(Packet::ACK(block_num)))
-                        } else {
-                            TftpResult::Reply(Packet::ACK(block_num))
-                        }
-                    } else {
-                        xfer.remove_entry();
-                        TftpResult::Done(Some(Packet::ERROR {
-                            code: ErrorCode::IllegalTFTP,
-                            msg: "".to_owned(),
-                        }))
-                    }
-                } else {
-                    TftpResult::Err(TftpError::InvalidTransferToken)
-                }
-            }
-            Packet::WRQ { filename, mode } => {
-                if self.xfers.contains_key(&token) {
-                    return TftpResult::Err(TftpError::TransferAlreadyRunning);
-                }
-                if mode == "mail" {
-                    return TftpResult::Done(Some(Packet::ERROR {
-                        code: ErrorCode::NoUser,
-                        msg: "".to_owned(),
-                    }));
-                }
-                if let Ok(mut fwrite) = self.io.create_new(&filename) {
-                    self.xfers.insert(
-                        token,
-                        Transfer {
-                            fread: None,
-                            expected_block_num: 1,
-                            sent_final: false,
-                            fwrite: Some(fwrite),
-                        },
-                    );
-                    TftpResult::Reply(Packet::ACK(0))
-                } else {
-                    TftpResult::Done(Some(Packet::ERROR {
-                        code: ErrorCode::FileExists,
-                        msg: "".to_owned(),
-                    }))
-                }
-            }
             _ => TftpResult::Err(TftpError::InvalidTransferToken),
+        }
+    }
+
+    fn handle_wrq(&mut self, token: Token, filename: &str, mode: &str) -> TftpResult {
+        if self.xfers.contains_key(&token) {
+            return TftpResult::Err(TftpError::TransferAlreadyRunning);
+        }
+        if mode == "mail" {
+            return TftpResult::Done(Some(Packet::ERROR {
+                code: ErrorCode::NoUser,
+                msg: "".to_owned(),
+            }));
+        }
+        if let Ok(mut fwrite) = self.io.create_new(&filename) {
+            self.xfers.insert(
+                token,
+                Transfer {
+                    fread: None,
+                    expected_block_num: 1,
+                    sent_final: false,
+                    fwrite: Some(fwrite),
+                },
+            );
+            TftpResult::Reply(Packet::ACK(0))
+        } else {
+            TftpResult::Done(Some(Packet::ERROR {
+                code: ErrorCode::FileExists,
+                msg: "".to_owned(),
+            }))
         }
     }
 
@@ -204,6 +174,40 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                     block_num: xfer.expected_block_num,
                     data: v,
                 })
+            }
+        } else {
+            TftpResult::Err(TftpError::InvalidTransferToken)
+        }
+    }
+
+    fn handle_data(&mut self, token: Token, block_num: u16, data: Vec<u8>) -> TftpResult {
+        if let Occupied(mut xfer) = self.xfers.entry(token) {
+            if block_num != xfer.get().expected_block_num {
+                xfer.remove_entry();
+                TftpResult::Done(Some(Packet::ERROR {
+                    code: ErrorCode::IllegalTFTP,
+                    msg: "Data packet lost".to_owned(),
+                }))
+            } else if xfer.get().fwrite.is_some() {
+                xfer.get_mut()
+                    .fwrite
+                    .as_mut()
+                    .unwrap()
+                    .write_all(data.as_slice())
+                    .unwrap();
+                xfer.get_mut().expected_block_num = block_num + 1;
+                if data.len() < 512 {
+                    xfer.remove_entry();
+                    TftpResult::Done(Some(Packet::ACK(block_num)))
+                } else {
+                    TftpResult::Reply(Packet::ACK(block_num))
+                }
+            } else {
+                xfer.remove_entry();
+                TftpResult::Done(Some(Packet::ERROR {
+                    code: ErrorCode::IllegalTFTP,
+                    msg: "".to_owned(),
+                }))
             }
         } else {
             TftpResult::Err(TftpError::InvalidTransferToken)
