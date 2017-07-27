@@ -112,14 +112,14 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
     }
 
     fn handle_rrq(&mut self, token: Token, filename: &str, mode: &str) -> TftpResult {
+        if self.xfers.contains_key(&token) {
+            return TftpResult::Err(TftpError::TransferAlreadyRunning);
+        }
         if mode == "mail" {
             return TftpResult::Done(Some(Packet::ERROR {
                 code: ErrorCode::NoUser,
                 msg: "".to_owned(),
             }));
-        }
-        if self.xfers.contains_key(&token) {
-            return TftpResult::Err(TftpError::TransferAlreadyRunning);
         }
         if let Ok(mut fread) = self.io.open_read(filename) {
             let mut v = vec![];
