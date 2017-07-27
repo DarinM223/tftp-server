@@ -32,6 +32,7 @@ pub enum TftpError {
     TransferAlreadyRunning,
 }
 
+// TODO: this needs to be redone as a 2-variant enum (probably)
 struct Transfer<IO: IOAdapter> {
     fread: Option<IO::R>,
     expected_block_num: u16,
