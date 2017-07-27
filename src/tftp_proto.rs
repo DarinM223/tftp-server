@@ -34,7 +34,7 @@ pub enum TftpError {
 
 struct Transfer<IO: IOAdapter> {
     fread: Option<IO::R>,
-    sent_block_num: u16,
+    expected_block_num: u16,
     sent_final: bool,
     fwrite: Option<IO::W>,
 }
@@ -78,7 +78,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
             Packet::ACK(ack_block) => self.handle_ack(token, ack_block),
             Packet::DATA { block_num, data } => {
                 if let Occupied(mut xfer) = self.xfers.entry(token) {
-                    if block_num != xfer.get().sent_block_num {
+                    if block_num != xfer.get().expected_block_num {
                         xfer.remove_entry();
                         return TftpResult::Done(Some(Packet::ERROR {
                             code: ErrorCode::IllegalTFTP,
@@ -91,7 +91,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                             .unwrap()
                             .write_all(data.as_slice())
                             .unwrap();
-                        xfer.get_mut().sent_block_num = block_num + 1;
+                        xfer.get_mut().expected_block_num = block_num + 1;
                         if data.len() < 512 {
                             xfer.remove_entry();
                             return TftpResult::Done(Some(Packet::ACK(block_num)));
@@ -123,7 +123,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                         token,
                         Transfer {
                             fread: None,
-                            sent_block_num: 1,
+                            expected_block_num: 0,
                             sent_final: false,
                             fwrite: Some(fwrite),
                         },
@@ -157,7 +157,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                 token,
                 Transfer {
                     fread: Some(fread),
-                    sent_block_num: 1,
+                    expected_block_num: 1,
                     sent_final: v.len() < 512,
                     fwrite: None,
                 },
@@ -182,9 +182,9 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                     code: ErrorCode::IllegalTFTP,
                     msg: "".to_owned(),
                 }))
-            } else if ack_block == xfer.get().sent_block_num.wrapping_sub(1) {
+            } else if ack_block == xfer.get().expected_block_num.wrapping_sub(1) {
                 TftpResult::Repeat
-            } else if ack_block != xfer.get().sent_block_num {
+            } else if ack_block != xfer.get().expected_block_num {
                 xfer.remove_entry();
                 TftpResult::Done(Some(Packet::ERROR {
                     code: ErrorCode::UnknownID,
@@ -198,9 +198,9 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                 let mut v = vec![];
                 xfer.fread.as_mut().unwrap().read_512(&mut v).unwrap();
                 xfer.sent_final = v.len() < 512;
-                xfer.sent_block_num = xfer.sent_block_num.wrapping_add(1);
+                xfer.expected_block_num = xfer.expected_block_num.wrapping_add(1);
                 TftpResult::Reply(Packet::DATA {
-                    block_num: xfer.sent_block_num,
+                    block_num: xfer.expected_block_num,
                     data: v,
                 })
             }
