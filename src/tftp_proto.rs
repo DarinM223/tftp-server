@@ -80,10 +80,10 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                 if let Occupied(mut xfer) = self.xfers.entry(token) {
                     if block_num != xfer.get().expected_block_num {
                         xfer.remove_entry();
-                        return TftpResult::Done(Some(Packet::ERROR {
+                        TftpResult::Done(Some(Packet::ERROR {
                             code: ErrorCode::IllegalTFTP,
                             msg: "Data packet lost".to_owned(),
-                        }));
+                        }))
                     } else if xfer.get().fwrite.is_some() {
                         xfer.get_mut()
                             .fwrite
@@ -94,19 +94,20 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                         xfer.get_mut().expected_block_num = block_num + 1;
                         if data.len() < 512 {
                             xfer.remove_entry();
-                            return TftpResult::Done(Some(Packet::ACK(block_num)));
+                            TftpResult::Done(Some(Packet::ACK(block_num)))
                         } else {
-                            return TftpResult::Reply(Packet::ACK(block_num));
+                            TftpResult::Reply(Packet::ACK(block_num))
                         }
+                    } else {
+                        xfer.remove_entry();
+                        TftpResult::Done(Some(Packet::ERROR {
+                            code: ErrorCode::IllegalTFTP,
+                            msg: "".to_owned(),
+                        }))
                     }
                 } else {
-                    return TftpResult::Err(TftpError::InvalidTransferToken);
+                    TftpResult::Err(TftpError::InvalidTransferToken)
                 }
-                self.xfers.remove(&token);
-                TftpResult::Done(Some(Packet::ERROR {
-                    code: ErrorCode::IllegalTFTP,
-                    msg: "".to_owned(),
-                }))
             }
             Packet::WRQ { filename, mode } => {
                 if self.xfers.contains_key(&token) {
