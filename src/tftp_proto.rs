@@ -78,13 +78,19 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
             Packet::ACK(ack_block) => self.handle_ack(token, ack_block),
             Packet::DATA { block_num, data } => {
                 if let Occupied(mut xfer) = self.xfers.entry(token) {
-                    if xfer.get().fwrite.is_some() {
+                    if block_num != xfer.get().sent_block_num {
+                        return TftpResult::Done(Some(Packet::ERROR {
+                            code: ErrorCode::IllegalTFTP,
+                            msg: "Data packet lost".to_owned(),
+                        }));
+                    } else if xfer.get().fwrite.is_some() {
                         xfer.get_mut()
                             .fwrite
                             .as_mut()
                             .unwrap()
                             .write_all(data.as_slice())
                             .unwrap();
+                        xfer.get_mut().sent_block_num = block_num + 1;
                         if data.len() < 512 {
                             xfer.remove_entry();
                             return TftpResult::Done(Some(Packet::ACK(block_num)));
