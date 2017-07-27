@@ -79,7 +79,10 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
             Packet::WRQ { filename, mode } => self.handle_wrq(token, &filename, &mode),
             Packet::DATA { block_num, data } => self.handle_data(token, block_num, data),
             Packet::ACK(ack_block) => self.handle_ack(token, ack_block),
-            _ => TftpResult::Err(TftpError::InvalidTransferToken),
+            Packet::ERROR { .. } => {
+                self.xfers.remove(&token);
+                TftpResult::Done(None)
+            }
         }
     }
 

@@ -378,6 +378,38 @@ fn rrq_small_file_wrq_already_running() {
 }
 
 #[test]
+fn rrq_small_file_err_kills_transfer() {
+    let (token, mut server, file, mut file_bytes) = rrq_fixture(612);
+    assert_eq!(
+        server.rx(
+            token,
+            Packet::RRQ {
+                filename: file.clone(),
+                mode: "octet".into(),
+            },
+        ),
+        TftpResult::Reply(Packet::DATA {
+            block_num: 1,
+            data: file_bytes.gen(512),
+        })
+    );
+    assert_eq!(
+        server.rx(
+            token,
+            Packet::ERROR {
+                code: ErrorCode::DiskFull,
+                msg: "".into(),
+            },
+        ),
+        TftpResult::Done(None)
+    );
+    assert_eq!(
+        server.rx(token, Packet::ACK(0)),
+        TftpResult::Err(TftpError::InvalidTransferToken)
+    );
+}
+
+#[test]
 fn wrq_already_exists_error() {
     let mut iof = TestIoFactory::new();
     let file = "textfile".to_owned();
