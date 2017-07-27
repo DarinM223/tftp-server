@@ -408,6 +408,18 @@ fn wrq_fixture(file_size: usize) -> (Token, TftpServerProto<TestIoFactory>, Stri
     (Token(26), serv, file, file_bytes)
 }
 
+fn wrq_fixture_early_termination(
+    file_size: usize,
+) -> (Token, TftpServerProto<TestIoFactory>, String, ByteGen) {
+    let mut iof = TestIoFactory::new();
+    let file = "textfile".to_owned();
+    iof.possible_files.insert(file.clone(), file_size);
+    iof.enforce_full_write = false;
+    let serv = TftpServerProto::new(iof);
+    let file_bytes = ByteGen::new(&file);
+    (Token(26), serv, file, file_bytes)
+}
+
 #[test]
 fn wrq_mail_gets_error() {
     let (token, mut server, file, _) = wrq_fixture(200);
@@ -540,7 +552,7 @@ fn wrq_small_file_reply_with_ack_illegal() {
 
 #[test]
 fn wrq_small_file_block_id_not_1_err() {
-    let (token, mut server, file, mut file_bytes) = wrq_fixture(132);
+    let (token, mut server, file, mut file_bytes) = wrq_fixture_early_termination(132);
     assert_eq!(
         server.rx(
             token,
@@ -569,12 +581,14 @@ fn wrq_small_file_block_id_not_1_err() {
 struct TestIoFactory {
     server_present_files: HashSet<String>,
     possible_files: HashMap<String, usize>,
+    enforce_full_write: bool,
 }
 impl TestIoFactory {
     fn new() -> Self {
         TestIoFactory {
             server_present_files: HashSet::new(),
             possible_files: HashMap::new(),
+            enforce_full_write: true,
         }
     }
 }
@@ -601,7 +615,11 @@ impl IOAdapter for TestIoFactory {
         } else {
             self.server_present_files.insert(filename.into());
             let size = *self.possible_files.get(filename).unwrap();
-            Ok(ExpectingWriter::new(filename, size))
+            Ok(ExpectingWriter::new(
+                filename,
+                size,
+                self.enforce_full_write,
+            ))
         }
     }
 }
@@ -658,10 +676,14 @@ impl Read for GeneratingReader {
 
 struct ExpectingWriter {
     gen: Take<ByteGen>,
+    enforce_full_write: bool,
 }
 impl ExpectingWriter {
-    fn new(s: &str, amt: usize) -> Self {
-        Self { gen: ByteGen::new(s).take(amt) }
+    fn new(s: &str, amt: usize, enforce_full_write: bool) -> Self {
+        Self {
+            gen: ByteGen::new(s).take(amt),
+            enforce_full_write,
+        }
     }
 }
 impl Write for ExpectingWriter {
@@ -684,13 +706,13 @@ impl Write for ExpectingWriter {
 }
 impl Drop for ExpectingWriter {
     fn drop(&mut self) {
-/*
-        let (_, sup) = self.gen.size_hint();
-        assert_eq!(
-            sup,
-            Some(0),
-            "writer destroyed before all bytes were written"
-        );
-*/
+        if self.enforce_full_write {
+            let (_, sup) = self.gen.size_hint();
+            assert_eq!(
+                sup,
+                Some(0),
+                "writer destroyed before all bytes were written"
+            );
+        }
     }
 }
