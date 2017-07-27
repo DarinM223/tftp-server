@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+#![deny(warnings)]
+
 use mio::*;
 use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet};
@@ -76,8 +78,8 @@ fn rrq_mail_gets_error() {
 fn rrq_fixture(file_size: usize) -> (Token, TftpServerProto<TestIoFactory>, String, ByteGen) {
     let mut iof = TestIoFactory::new();
     let file = "textfile".to_owned();
-    iof.files.insert(file.clone(), file_size);
-    iof.server_files.insert(file.clone());
+    iof.possible_files.insert(file.clone(), file_size);
+    iof.server_present_files.insert(file.clone());
     let serv = TftpServerProto::new(iof);
     let file_bytes = ByteGen::new(&file);
     (Token(26), serv, file, file_bytes)
@@ -379,8 +381,8 @@ fn rrq_small_file_wrq_already_running() {
 fn wrq_already_exists_error() {
     let mut iof = TestIoFactory::new();
     let file = "textfile".to_owned();
-    iof.files.insert(file.clone(), 132);
-    iof.server_files.insert(file.clone());
+    iof.possible_files.insert(file.clone(), 132);
+    iof.server_present_files.insert(file.clone());
     let mut server = TftpServerProto::new(iof);
     assert_eq!(
         server.rx(
@@ -400,7 +402,7 @@ fn wrq_already_exists_error() {
 fn wrq_fixture(file_size: usize) -> (Token, TftpServerProto<TestIoFactory>, String, ByteGen) {
     let mut iof = TestIoFactory::new();
     let file = "textfile".to_owned();
-    iof.files.insert(file.clone(), file_size);
+    iof.possible_files.insert(file.clone(), file_size);
     let serv = TftpServerProto::new(iof);
     let file_bytes = ByteGen::new(&file);
     (Token(26), serv, file, file_bytes)
@@ -537,14 +539,14 @@ fn wrq_small_file_reply_with_ack_illegal() {
 }
 
 struct TestIoFactory {
-    server_files: HashSet<String>,
-    files: HashMap<String, usize>,
+    server_present_files: HashSet<String>,
+    possible_files: HashMap<String, usize>,
 }
 impl TestIoFactory {
     fn new() -> Self {
         TestIoFactory {
-            server_files: HashSet::new(),
-            files: HashMap::new(),
+            server_present_files: HashSet::new(),
+            possible_files: HashMap::new(),
         }
     }
 }
@@ -552,8 +554,8 @@ impl IOAdapter for TestIoFactory {
     type R = GeneratingReader;
     type W = ExpectingWriter;
     fn open_read(&self, filename: &str) -> io::Result<Self::R> {
-        if self.server_files.contains(filename) {
-            let size = *self.files.get(filename).unwrap();
+        if self.server_present_files.contains(filename) {
+            let size = *self.possible_files.get(filename).unwrap();
             Ok(GeneratingReader::new(filename, size))
         } else {
             Err(io::Error::new(
@@ -563,14 +565,14 @@ impl IOAdapter for TestIoFactory {
         }
     }
     fn create_new(&mut self, filename: &str) -> io::Result<ExpectingWriter> {
-        if self.server_files.contains(filename) {
+        if self.server_present_files.contains(filename) {
             Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 "test file already there",
             ))
         } else {
-            self.server_files.insert(filename.into());
-            let size = *self.files.get(filename).unwrap();
+            self.server_present_files.insert(filename.into());
+            let size = *self.possible_files.get(filename).unwrap();
             Ok(ExpectingWriter::new(filename, size))
         }
     }
