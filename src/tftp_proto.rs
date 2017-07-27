@@ -84,15 +84,13 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
 
     fn handle_wrq(&mut self, token: Token, filename: &str, mode: &str) -> TftpResult {
         if self.xfers.contains_key(&token) {
-            return TftpResult::Err(TftpError::TransferAlreadyRunning);
-        }
-        if mode == "mail" {
-            return TftpResult::Done(Some(Packet::ERROR {
+            TftpResult::Err(TftpError::TransferAlreadyRunning)
+        } else if mode == "mail" {
+            TftpResult::Done(Some(Packet::ERROR {
                 code: ErrorCode::NoUser,
                 msg: "".to_owned(),
-            }));
-        }
-        if let Ok(mut fwrite) = self.io.create_new(&filename) {
+            }))
+        } else if let Ok(mut fwrite) = self.io.create_new(&filename) {
             self.xfers.insert(
                 token,
                 Transfer {
@@ -113,15 +111,13 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
 
     fn handle_rrq(&mut self, token: Token, filename: &str, mode: &str) -> TftpResult {
         if self.xfers.contains_key(&token) {
-            return TftpResult::Err(TftpError::TransferAlreadyRunning);
-        }
-        if mode == "mail" {
-            return TftpResult::Done(Some(Packet::ERROR {
+            TftpResult::Err(TftpError::TransferAlreadyRunning)
+        } else if mode == "mail" {
+            TftpResult::Done(Some(Packet::ERROR {
                 code: ErrorCode::NoUser,
                 msg: "".to_owned(),
-            }));
-        }
-        if let Ok(mut fread) = self.io.open_read(filename) {
+            }))
+        } else if let Ok(mut fread) = self.io.open_read(filename) {
             let mut v = vec![];
             fread.read_512(&mut v).unwrap();
             self.xfers.insert(
