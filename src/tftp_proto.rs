@@ -201,7 +201,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                     .unwrap()
                     .write_all(data.as_slice())
                     .unwrap();
-                xfer.get_mut().expected_block_num = block_num + 1;
+                xfer.get_mut().expected_block_num = block_num.wrapping_add(1);
                 if data.len() < 512 {
                     xfer.remove_entry();
                     TftpResult::Done(Some(Packet::ACK(block_num)))

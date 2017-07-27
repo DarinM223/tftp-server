@@ -620,6 +620,46 @@ fn wrq_small_file_block_id_not_1_err() {
     );
 }
 
+#[test]
+fn wrq_large_file_blocknum_wraparound() {
+    let size_bytes = 512 * 70_000 + 85;
+    let (token, mut server, file, mut file_bytes) = wrq_fixture(size_bytes);
+    assert_eq!(
+        server.rx(
+            token,
+            Packet::WRQ {
+                filename: file,
+                mode: "octet".into(),
+            },
+        ),
+        TftpResult::Reply(Packet::ACK(0))
+    );
+    let mut block_num = 1;
+    for _ in 0..(size_bytes / 512) {
+        assert_eq!(
+            server.rx(
+                token,
+                Packet::DATA {
+                    block_num,
+                    data: file_bytes.gen(512),
+                },
+            ),
+            TftpResult::Reply(Packet::ACK(block_num))
+        );
+        block_num = block_num.wrapping_add(1);
+    }
+    assert_eq!(
+        server.rx(
+            token,
+            Packet::DATA {
+                block_num,
+                data: file_bytes.gen(85),
+            },
+        ),
+        TftpResult::Done(Some(Packet::ACK(block_num)))
+    );
+}
+
 struct TestIoFactory {
     server_present_files: HashSet<String>,
     possible_files: HashMap<String, usize>,
