@@ -31,7 +31,7 @@ path = "src/bin.rs"
 name = "tftp-packet-tests"
 path = "tests/test_packet.rs"
 
-#[[test]]
-#name = "tftp-server-tests"
-#path = "tests/test_server.rs"
-#harness = false
+[[test]]
+name = "tftp-server-tests"
+path = "tests/test_server.rs"
+harness = false
