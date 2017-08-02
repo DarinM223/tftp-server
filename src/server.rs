@@ -228,7 +228,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     /// Handles the event when a timer times out.
     /// It gets the connection from the token and resends
     /// the last packet sent from the connection.
-    fn handle_timer(&mut self) -> Result<()> {
+    fn process_timer(&mut self) -> Result<()> {
         let mut tokens = Vec::new();
         while let Some(token) = self.timer.poll() {
             tokens.push(token);
@@ -253,90 +253,98 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     /// is a token that can either be from the server, from an open connection,
     /// or from a timeout timer for a connection.
     fn handle_token(&mut self, token: Token) -> Result<()> {
+        match token {
+            TIMER => self.process_timer(),
+            SERVER => self.handle_server_packet(),
+            _ => self.handle_connection_packet(token),
+        }
+    }
+
+    fn handle_server_packet(&mut self) -> Result<()> {
         use self::TftpResult::*;
         let mut buf = [0; MAX_PACKET_SIZE];
-        match token {
-            TIMER => return self.handle_timer(),
-            SERVER => {
-                let (amt, src) = match self.socket.recv_from(&mut buf)? {
-                    Some((amt, src)) => (amt, src),
-                    None => return Ok(()),
-                };
-                let packet = Packet::read(&buf[..amt])?;
 
-                let new_conn_token = self.generate_token();
-                match self.proto_handler.rx(new_conn_token, packet) {
-                    Err(e) => error!("{:?}", e),
-                    Repeat => error!("cannot handle repeat of nothing"),
-                    Reply(packet) => {
-                        return self.create_connection(new_conn_token, packet, src);
-                    }
-                    Done(Some(packet)) => {
-                        let socket = create_socket(None)?;
-                        socket.send_to(packet.into_bytes()?.to_slice(), src)?;
-                    }
-                    Done(None) => {}
-                }
-                return Ok(());
+        let (amt, src) = match self.socket.recv_from(&mut buf)? {
+            Some((amt, src)) => (amt, src),
+            None => return Ok(()),
+        };
+        let packet = Packet::read(&buf[..amt])?;
+
+        let new_conn_token = self.generate_token();
+        match self.proto_handler.rx(new_conn_token, packet) {
+            Err(e) => error!("{:?}", e),
+            Repeat => error!("cannot handle repeat of nothing"),
+            Reply(packet) => {
+                return self.create_connection(new_conn_token, packet, src);
             }
-            _ => {
-                self.reset_timeout(&token)?;
-                let conn = match self.connections.get_mut(&token) {
-                    Some(conn) => conn,
-                    None => {
-                        error!("No connection with token {:?}", token);
-                        return Ok(());
-                    }
-                };
-                let (amt, src) = match conn.socket.recv_from(&mut buf)? {
-                    Some((amt, src)) => (amt, src),
-                    None => return Ok(()),
-                };
-
-                if conn.remote != src {
-                    // packet from somehere else, reply with error
-                    conn.socket.send_to(
-                        Packet::ERROR {
-                            code: ErrorCode::UnknownID,
-                            msg: "".to_owned(),
-                        }.into_bytes()?
-                            .to_slice(),
-                        &conn.remote,
-                    )?;
-                    return Ok(());
-                }
-                let packet = Packet::read(&buf[..amt])?;
-
-                let response = match self.proto_handler.rx(token, packet) {
-                    Err(e) => {
-                        error!("{:?}", e);
-                        None
-                    }
-                    Repeat => Some(&conn.last_packet),
-                    Reply(packet) => {
-                        conn.last_packet = packet;
-                        Some(&conn.last_packet)
-                    }
-                    Done(response) => {
-                        conn.dallying = true;
-                        if let Some(packet) = response {
-                            conn.last_packet = packet;
-                            Some(&conn.last_packet)
-                        } else {
-                            None
-                        }
-                    }
-                };
-
-                if let Some(packet) = response {
-                    conn.socket.send_to(
-                        packet.to_bytes()?.to_slice(),
-                        &conn.remote,
-                    )?;
-                }
-                return Ok(());
+            Done(Some(packet)) => {
+                let socket = create_socket(None)?;
+                socket.send_to(packet.into_bytes()?.to_slice(), src)?;
             }
+            Done(None) => {}
         }
+        Ok(())
+    }
+
+    fn handle_connection_packet(&mut self, token: Token) -> Result<()> {
+        use self::TftpResult::*;
+        let mut buf = [0; MAX_PACKET_SIZE];
+
+        self.reset_timeout(&token)?;
+        let conn = match self.connections.get_mut(&token) {
+            Some(conn) => conn,
+            None => {
+                error!("No connection with token {:?}", token);
+                return Ok(());
+            }
+        };
+        let (amt, src) = match conn.socket.recv_from(&mut buf)? {
+            Some((amt, src)) => (amt, src),
+            None => return Ok(()),
+        };
+
+        if conn.remote != src {
+            // packet from somehere else, reply with error
+            conn.socket.send_to(
+                Packet::ERROR {
+                    code: ErrorCode::UnknownID,
+                    msg: "".to_owned(),
+                }.into_bytes()?
+                    .to_slice(),
+                &conn.remote,
+            )?;
+            return Ok(());
+        }
+        let packet = Packet::read(&buf[..amt])?;
+
+        let response = match self.proto_handler.rx(token, packet) {
+            Err(e) => {
+                error!("{:?}", e);
+                None
+            }
+            Repeat => Some(&conn.last_packet),
+            Reply(packet) => {
+                conn.last_packet = packet;
+                Some(&conn.last_packet)
+            }
+            Done(response) => {
+                conn.dallying = true;
+                if let Some(packet) = response {
+                    conn.last_packet = packet;
+                    Some(&conn.last_packet)
+                } else {
+                    None
+                }
+            }
+        };
+
+        if let Some(packet) = response {
+            conn.socket.send_to(
+                packet.to_bytes()?.to_slice(),
+                &conn.remote,
+            )?;
+        }
+        Ok(())
     }
 
     /// Runs the server's event loop.
