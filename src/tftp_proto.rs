@@ -94,7 +94,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                 code: ErrorCode::NoUser,
                 msg: "".to_owned(),
             }))
-        } else if let Ok(mut fwrite) = self.io.create_new(&filename) {
+        } else if let Ok(fwrite) = self.io.create_new(&filename) {
             self.xfers.insert(
                 token,
                 Transfer {
