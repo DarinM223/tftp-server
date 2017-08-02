@@ -209,7 +209,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         )?;
         info!("Created connection with token: {:?}", token);
 
-        socket.send_to(packet.clone().into_bytes()?.to_slice(), &remote)?;
+        socket.send_to(packet.to_bytes()?.to_slice(), &remote)?;
 
         self.connections.insert(
             token,
@@ -239,7 +239,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
                 self.cancel_connection(&token)?;
             } else if let Some(ref mut conn) = self.connections.get_mut(&token) {
                 conn.socket.send_to(
-                    conn.last_packet.clone().into_bytes()?.to_slice(),
+                    conn.last_packet.to_bytes()?.to_slice(),
                     &conn.remote,
                 )?;
             }
@@ -311,16 +311,16 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
                         error!("{:?}", e);
                         None
                     }
-                    Repeat => Some(conn.last_packet.clone()),
+                    Repeat => Some(&conn.last_packet),
                     Reply(packet) => {
-                        conn.last_packet = packet.clone();
-                        Some(packet)
+                        conn.last_packet = packet;
+                        Some(&conn.last_packet)
                     }
                     Done(response) => {
                         conn.dallying = true;
                         if let Some(packet) = response {
-                            conn.last_packet = packet.clone();
-                            Some(packet)
+                            conn.last_packet = packet;
+                            Some(&conn.last_packet)
                         } else {
                             None
                         }
@@ -329,7 +329,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 
                 if let Some(packet) = response {
                     conn.socket.send_to(
-                        packet.clone().into_bytes()?.to_slice(),
+                        packet.to_bytes()?.to_slice(),
                         &conn.remote,
                     )?;
                 }

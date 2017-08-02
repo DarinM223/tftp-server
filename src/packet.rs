@@ -152,12 +152,17 @@ impl Packet {
 
     /// Consumes the packet and returns the packet in byte representation.
     pub fn into_bytes(self) -> Result<PacketData> {
+        self.to_bytes()
+    }
+
+    /// Returns the byte representation of the packet
+    pub fn to_bytes(&self) -> Result<PacketData> {
         match self {
-            Packet::RRQ { filename, mode } => rw_packet_bytes(OpCode::RRQ, &filename, &mode),
-            Packet::WRQ { filename, mode } => rw_packet_bytes(OpCode::WRQ, &filename, &mode),
-            Packet::DATA { block_num, data } => data_packet_bytes(block_num, data.as_slice()),
-            Packet::ACK(block_num) => ack_packet_bytes(block_num),
-            Packet::ERROR { code, msg } => error_packet_bytes(code, &msg),
+            &Packet::RRQ { ref filename, ref mode } => rw_packet_bytes(OpCode::RRQ, filename, mode),
+            &Packet::WRQ { ref filename, ref mode } => rw_packet_bytes(OpCode::WRQ, filename, mode),
+            &Packet::DATA { block_num, ref data } => data_packet_bytes(block_num, data.as_slice()),
+            &Packet::ACK(block_num) => ack_packet_bytes(block_num),
+            &Packet::ERROR { code, ref msg } => error_packet_bytes(code, msg),
         }
     }
 }
