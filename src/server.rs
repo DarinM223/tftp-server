@@ -31,12 +31,6 @@ pub enum TftpError {
     /// Error returned when the server cannot
     /// find a random open UDP port within 100 tries.
     NoOpenSocket,
-    /// Error signalling that a received packed did not match
-    /// the current expected block number
-    BlockNoMismatch,
-    /// Error returned when a reading connection receives a DATA packet
-    /// or a writing connection receives an ACK
-    WrongPacketType,
 }
 
 impl From<io::Error> for TftpError {
