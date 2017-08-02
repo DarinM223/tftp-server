@@ -119,7 +119,7 @@ pub struct TftpServerImpl<IO: IOAdapter> {
     socket: UdpSocket,
     /// The separate UDP connections for handling multiple requests.
     connections: HashMap<Token, ConnectionState>,
-
+    /// The TFTP protocol state machine and filesystem accessor
     proto_handler: TftpServerProto<IO>,
 }
 
@@ -292,8 +292,9 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
                     Some((amt, src)) => (amt, src),
                     None => return Ok(()),
                 };
-                // packet from somehere else, reply with error
+
                 if conn.remote != src {
+                    // packet from somehere else, reply with error
                     conn.socket.send_to(
                         Packet::ERROR {
                             code: ErrorCode::UnknownID,
