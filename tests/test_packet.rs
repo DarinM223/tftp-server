@@ -6,9 +6,9 @@ macro_rules! packet {
     ($name:ident, $packet:expr) => {
         #[test]
         fn $name() {
-            let bytes = $packet.clone().to_bytes();
+            let bytes = $packet.clone().into_bytes();
             assert!(bytes.is_ok());
-            let packet = bytes.and_then(Packet::read);
+            let packet = bytes.and_then(|pd| Packet::read(pd.to_slice()));
             assert!(packet.is_ok());
             let _ = packet.map(|packet| { assert_eq!(packet, $packet); });
         }
@@ -36,8 +36,7 @@ packet!(
     data,
     Packet::DATA {
         block_num: 1234,
-        data: DataBytes(BYTE_DATA),
-        len: 512,
+        data: Vec::from(&BYTE_DATA[..]),
     }
 );
 packet!(
