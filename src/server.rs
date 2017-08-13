@@ -91,12 +91,14 @@ impl Default for FSAdapter {
 /// a RRQ or a WRQ packet and ends when the connection socket
 /// receives a DATA packet less than 516 bytes or if the connection
 /// socket receives an invalid packet.
-struct ConnectionState {
+struct ConnectionState<IO: IOAdapter> {
     /// The UDP socket for the connection that receives ACK, DATA, or ERROR packets.
     socket: UdpSocket,
     /// The timeout for the last packet. Every time a new packet is received, the
     /// timeout is reset.
     timeout: Timeout,
+
+    transfer: Transfer<IO>,
     /// The last packet sent. This is used when a timeout happens to resend the last packet.
     last_packet: Packet,
     /// The address of the client socket to reply to.
@@ -118,7 +120,7 @@ pub struct TftpServerImpl<IO: IOAdapter> {
     /// and creates a new separate UDP connection.
     socket: UdpSocket,
     /// The separate UDP connections for handling multiple requests.
-    connections: HashMap<Token, ConnectionState>,
+    connections: HashMap<Token, ConnectionState<IO>>,
     /// The TFTP protocol state machine and filesystem accessor
     proto_handler: TftpServerProto<IO>,
 }
@@ -196,6 +198,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     fn create_connection(
         &mut self,
         token: Token,
+        transfer: Transfer<IO>,
         packet: Packet,
         remote: SocketAddr,
     ) -> Result<()> {
@@ -216,6 +219,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             ConnectionState {
                 socket,
                 timeout,
+                transfer,
                 last_packet: packet,
                 remote,
                 dallying: false,
@@ -271,11 +275,12 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         let packet = Packet::read(&buf[..amt])?;
 
         let new_conn_token = self.generate_token();
-        match self.proto_handler.rx(new_conn_token, packet) {
+        let (xfer, res) = self.proto_handler.rx_initial(packet);
+        match res {
             Err(e) => error!("{:?}", e),
             Repeat => error!("cannot handle repeat of nothing"),
             Reply(packet) => {
-                return self.create_connection(new_conn_token, packet, src);
+                return self.create_connection(new_conn_token, xfer.unwrap(), packet, src);
             }
             Done(Some(packet)) => {
                 let socket = create_socket(None)?;
@@ -317,7 +322,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         }
         let packet = Packet::read(&buf[..amt])?;
 
-        let response = match self.proto_handler.rx(token, packet) {
+        let response = match conn.transfer.rx(packet) {
             Err(e) => {
                 error!("{:?}", e);
                 None
