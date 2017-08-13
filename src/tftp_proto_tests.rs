@@ -2,7 +2,6 @@
 
 #![deny(warnings)]
 
-use mio::*;
 use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Write};
@@ -120,30 +119,6 @@ fn rrq_1_block_file() {
         })
     );
     assert_eq!(xfer.rx(Packet::ACK(2)), TftpResult::Done(None));
-}
-
-#[test]
-fn rrq_small_file_ack_timeout_err() {
-    let (mut server, file, mut file_bytes) = rrq_fixture(132);
-    let token = Token(14);
-    assert_eq!(
-        server.rx(
-            token,
-            Packet::RRQ {
-                filename: file,
-                mode: "octet".into(),
-            },
-        ),
-        TftpResult::Reply(Packet::DATA {
-            block_num: 1,
-            data: file_bytes.gen(132),
-        })
-    );
-    server.timeout(token);
-    assert_eq!(
-        server.rx(token, Packet::ACK(1)),
-        TftpResult::Err(TftpError::InvalidTransferToken)
-    );
 }
 
 #[test]

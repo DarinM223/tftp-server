@@ -174,7 +174,6 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     /// Cancels a connection given the connection's token. It cancels the
     /// connection's timeout and deregisters the connection's socket from the event loop.
     fn cancel_connection(&mut self, token: &Token) -> Result<()> {
-        self.proto_handler.timeout(*token);
         if let Some(conn) = self.connections.remove(token) {
             info!("Closing connection with token {:?}", token);
             self.poll.deregister(&conn.socket)?;

@@ -1,6 +1,3 @@
-use mio::*;
-use std::collections::HashMap;
-use std::collections::hash_map::Entry::Occupied;
 use std::io::Write;
 use packet::{ErrorCode, Packet};
 use server::{IOAdapter, Read512};
@@ -24,9 +21,6 @@ pub enum TftpResult {
 
 #[derive(Debug, PartialEq)]
 pub enum TftpError {
-    /// The transfer token is not part of any ongoing transfer
-    InvalidTransferToken,
-
     /// The transfer token is already part of an ongoing transfer,
     /// and cannot be used for a new transfer
     TransferAlreadyRunning,
@@ -48,46 +42,12 @@ pub struct Transfer<IO: IOAdapter> {
 /// used as backend for a TFTP server
 pub struct TftpServerProto<IO: IOAdapter> {
     io: IO,
-    xfers: HashMap<Token, Transfer<IO>>,
 }
 
 impl<IO: IOAdapter> TftpServerProto<IO> {
     /// Creates a new instance with the provided IOAdapter
     pub(crate) fn new(io: IO) -> Self {
-        TftpServerProto {
-            io: io,
-            xfers: HashMap::new(),
-        }
-    }
-
-    /// Signals the protocol implementation that the connection
-    /// associated with this token has timed out.
-    /// The protocol may forget any state associated with that token.
-    pub(crate) fn timeout(&mut self, token: Token) {
-        self.xfers.remove(&token);
-    }
-
-    /// Signals the receipt of a packet. with an associated token.
-    ///
-    /// For RRQ and WRQ packets, the token must be a new one,
-    /// not yet associated with current transfers.
-    ///
-    /// For DATA, ACK, and ERROR packets, the token must be the same one
-    /// supplied with the initial RRQ/WRQ packet.
-    ///
-    /// The token will remain uniquely associated with its connection,
-    /// until `TftpResult::Done` or `TftpResult::Err` is returned, or until `timeout` is called.
-    pub(crate) fn rx(&mut self, token: Token, packet: Packet) -> TftpResult {
-        match packet {
-            Packet::RRQ { filename, mode } => self.handle_rrq_old(token, &filename, &mode),
-            Packet::WRQ { filename, mode } => self.handle_wrq_old(token, &filename, &mode),
-            Packet::DATA { block_num, data } => self.handle_data_old(token, block_num, data),
-            Packet::ACK(ack_block) => self.handle_ack_old(token, ack_block),
-            Packet::ERROR { .. } => {
-                self.xfers.remove(&token);
-                TftpResult::Done(None)
-            }
-        }
+        TftpServerProto { io: io }
     }
 
     pub(crate) fn rx_initial(&mut self, packet: Packet) -> (Option<Transfer<IO>>, TftpResult) {
@@ -96,18 +56,6 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
             Packet::WRQ { filename, mode } => self.handle_wrq(&filename, &mode),
             _ => (None, TftpResult::Err(TftpError::NotIniatingPacket)),
         }
-    }
-
-    fn handle_wrq_old(&mut self, token: Token, filename: &str, mode: &str) -> TftpResult {
-        if self.xfers.contains_key(&token) {
-            return TftpResult::Err(TftpError::TransferAlreadyRunning);
-        }
-
-        let (xfer, res) = self.handle_wrq(filename, mode);
-        if let Some(xfer) = xfer {
-            self.xfers.insert(token, xfer);
-        }
-        res
     }
 
     fn handle_wrq(&mut self, filename: &str, mode: &str) -> (Option<Transfer<IO>>, TftpResult) {
@@ -139,18 +87,6 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                 })),
             )
         }
-    }
-
-    fn handle_rrq_old(&mut self, token: Token, filename: &str, mode: &str) -> TftpResult {
-        if self.xfers.contains_key(&token) {
-            return TftpResult::Err(TftpError::TransferAlreadyRunning);
-        }
-
-        let (xfer, res) = self.handle_rrq(filename, mode);
-        if let Some(xfer) = xfer {
-            self.xfers.insert(token, xfer);
-        }
-        res
     }
 
     fn handle_rrq(&mut self, filename: &str, mode: &str) -> (Option<Transfer<IO>>, TftpResult) {
@@ -188,30 +124,6 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
             )
         }
     }
-
-    fn handle_ack_old(&mut self, token: Token, ack_block: u16) -> TftpResult {
-        if let Occupied(mut xfer) = self.xfers.entry(token) {
-            let res = xfer.get_mut().handle_ack(ack_block);
-            if let TftpResult::Done(_) = res {
-                xfer.remove_entry();
-            }
-            res
-        } else {
-            TftpResult::Err(TftpError::InvalidTransferToken)
-        }
-    }
-
-    fn handle_data_old(&mut self, token: Token, block_num: u16, data: Vec<u8>) -> TftpResult {
-        if let Occupied(mut xfer) = self.xfers.entry(token) {
-            let res = xfer.get_mut().handle_data(block_num, data);
-            if let TftpResult::Done(_) = res {
-                xfer.remove_entry();
-            }
-            res
-        } else {
-            TftpResult::Err(TftpError::InvalidTransferToken)
-        }
-    }
 }
 
 impl<IO: IOAdapter> Transfer<IO> {
@@ -227,7 +139,7 @@ impl<IO: IOAdapter> Transfer<IO> {
         }
     }
 
-    pub(super) fn handle_ack(&mut self, ack_block: u16) -> TftpResult {
+    fn handle_ack(&mut self, ack_block: u16) -> TftpResult {
         if self.fwrite.is_some() {
             self.complete = true;
             TftpResult::Done(Some(Packet::ERROR {
@@ -259,7 +171,7 @@ impl<IO: IOAdapter> Transfer<IO> {
         }
     }
 
-    pub(super) fn handle_data(&mut self, block_num: u16, data: Vec<u8>) -> TftpResult {
+    fn handle_data(&mut self, block_num: u16, data: Vec<u8>) -> TftpResult {
         if self.fread.is_some() {
             self.complete = true;
             TftpResult::Done(Some(Packet::ERROR {
