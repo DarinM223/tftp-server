@@ -21,8 +21,7 @@ pub enum TftpResult {
 
 #[derive(Debug, PartialEq)]
 pub enum TftpError {
-    /// The transfer token is already part of an ongoing transfer,
-    /// and cannot be used for a new transfer
+    /// The is already running and cannot be restarted
     TransferAlreadyRunning,
 
     /// The received packet type cannot be used to initiate a transfer
