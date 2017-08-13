@@ -66,7 +66,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                     msg: "".to_owned(),
                 })),
             )
-        } else if let Ok(fwrite) = self.io.create_new(&filename) {
+        } else if let Ok(fwrite) = self.io.create_new(filename) {
             (
                 Some(Transfer {
                     fread: None,

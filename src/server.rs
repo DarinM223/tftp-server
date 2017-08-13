@@ -64,7 +64,7 @@ pub trait IOAdapter {
     fn create_new(&mut self, filename: &str) -> io::Result<Self::W>;
 }
 
-/// Provides a simple, default implementation for IOAdapter.
+/// Provides a simple, default implementation for `IOAdapter`.
 pub struct FSAdapter;
 
 impl IOAdapter for FSAdapter {
@@ -375,7 +375,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
     let mut failed_ports = HashSet::new();
     for _ in 0..100 {
-        let port = rand::thread_rng().gen_range(0, 65535);
+        let port = rand::thread_rng().gen_range(0, 65_535);
         if failed_ports.contains(&port) {
             continue;
         }
