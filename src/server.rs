@@ -256,17 +256,15 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     /// Called for every event sent from the event loop. The event
     /// is a token that can either be from the server, from an open connection,
     /// or from a timeout timer for a connection.
-    fn handle_token(&mut self, token: Token) -> Result<()> {
+    fn handle_token(&mut self, token: Token, mut buf: &mut [u8]) -> Result<()> {
         match token {
             TIMER => self.process_timer(),
-            SERVER => self.handle_server_packet(),
-            _ => self.handle_connection_packet(token),
+            SERVER => self.handle_server_packet(&mut buf),
+            _ => self.handle_connection_packet(token, &mut buf),
         }
     }
 
-    fn handle_server_packet(&mut self) -> Result<()> {
-        let mut buf = [0; MAX_PACKET_SIZE];
-
+    fn handle_server_packet(&mut self, mut buf: &mut [u8]) -> Result<()> {
         let (amt, src) = self.socket.recv_from(&mut buf)?;
         let packet = Packet::read(&buf[..amt])?;
 
@@ -282,7 +280,12 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 
         match xfer {
             Some(xfer) => {
-                self.create_connection(new_conn_token, xfer, reply_packet, src)?;
+                self.create_connection(
+                    new_conn_token,
+                    xfer,
+                    reply_packet,
+                    src,
+                )?;
             }
             None => {
                 let socket = create_socket(None)?;
@@ -292,9 +295,8 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         Ok(())
     }
 
-    fn handle_connection_packet(&mut self, token: Token) -> Result<()> {
+    fn handle_connection_packet(&mut self, token: Token, mut buf: &mut [u8]) -> Result<()> {
         use self::TftpResult::*;
-        let mut buf = [0; MAX_PACKET_SIZE];
 
         self.reset_timeout(&token)?;
         let conn = match self.connections.get_mut(&token) {
@@ -326,11 +328,12 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
                 None
             }
             Repeat => Some(&conn.last_packet),
-            Reply(packet) | Done(Some(packet)) => {
+            Reply(packet) |
+            Done(Some(packet)) => {
                 conn.last_packet = packet;
                 Some(&conn.last_packet)
             }
-            Done(None) => None
+            Done(None) => None,
         };
 
         if let Some(packet) = response {
@@ -345,11 +348,13 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     /// Runs the server's event loop.
     pub fn run(&mut self) -> Result<()> {
         let mut events = Events::with_capacity(1024);
+        let mut scratch_buf = [0; MAX_PACKET_SIZE];
+
         loop {
             self.poll.poll(&mut events, None)?;
 
             for event in events.iter() {
-                match self.handle_token(event.token()) {
+                match self.handle_token(event.token(), &mut scratch_buf) {
                     Ok(_) |
                     Err(TftpError::IoError(_)) => { /* swallow Io errors */ }
                     e => return e,
