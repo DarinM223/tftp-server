@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{self, Write};
 use packet::{ErrorCode, Packet};
 use server::{IOAdapter, Read512};
 
@@ -66,17 +66,8 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                     msg: "".to_owned(),
                 })),
             )
-        } else if let Ok(fwrite) = self.io.create_new(filename) {
-            (
-                Some(Transfer {
-                    fread: None,
-                    expected_block_num: 1,
-                    sent_final: false,
-                    fwrite: Some(fwrite),
-                    complete: false,
-                }),
-                TftpResult::Reply(Packet::ACK(0)),
-            )
+        } else if let Ok(xfer) = Transfer::new_write(&mut self.io, filename) {
+            (Some(xfer), TftpResult::Reply(Packet::ACK(0)))
         } else {
             (
                 None,
@@ -97,17 +88,12 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                     msg: "".to_owned(),
                 })),
             )
-        } else if let Ok(mut fread) = self.io.open_read(filename) {
+        } else if let Ok(mut xfer) = Transfer::new_read(&mut self.io, filename) {
             let mut v = vec![];
-            fread.read_512(&mut v).unwrap();
+            xfer.fread.as_mut().unwrap().read_512(&mut v).unwrap();
+            xfer.sent_final = v.len() < 512;
             (
-                Some(Transfer {
-                    fread: Some(fread),
-                    expected_block_num: 1,
-                    sent_final: v.len() < 512,
-                    fwrite: None,
-                    complete: false,
-                }),
+                Some(xfer),
                 TftpResult::Reply(Packet::DATA {
                     block_num: 1,
                     data: v,
@@ -126,6 +112,30 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
 }
 
 impl<IO: IOAdapter> Transfer<IO> {
+    pub(super) fn new_read(io: &mut IO, filename: &str) -> io::Result<Self> {
+        io.open_read(filename).map(|fread| {
+            Self {
+                fread: Some(fread),
+                expected_block_num: 1,
+                sent_final: false,
+                fwrite: None,
+                complete: false,
+            }
+        })
+    }
+
+    pub(super) fn new_write(io: &mut IO, filename: &str) -> io::Result<Self> {
+        io.create_new(filename).map(|fwrite| {
+            Self {
+                fread: None,
+                expected_block_num: 1,
+                sent_final: false,
+                fwrite: Some(fwrite),
+                complete: false,
+            }
+        })
+    }
+
     pub(crate) fn rx(&mut self, packet: Packet) -> TftpResult {
         match packet {
             Packet::ACK(ack_block) => self.handle_ack(ack_block),
