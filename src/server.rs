@@ -97,7 +97,7 @@ struct ConnectionState<IO: IOAdapter> {
     /// The timeout for the last packet. Every time a new packet is received, the
     /// timeout is reset.
     timeout: Timeout,
-
+    /// The protocol state associated with this transfer
     transfer: Transfer<IO>,
     /// The last packet sent. This is used when a timeout happens to resend the last packet.
     last_packet: Packet,
