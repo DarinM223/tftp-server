@@ -48,45 +48,56 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
     /// If a 'Transfer' is not returned, then a transfer cannot be started from the
     /// received packet
     ///
-    /// In both cases any packet contained in the `TftpResult` should be sent back to the client
-    pub fn rx_initial(&mut self, packet: Packet) -> (Option<Transfer<IO>>, TftpResult) {
+    /// In both cases any packet contained in the `Result` should be sent back to the client
+    pub fn rx_initial(
+        &mut self,
+        packet: Packet,
+    ) -> (Option<Transfer<IO>>, Result<Packet, TftpError>) {
         match packet {
             Packet::RRQ { filename, mode } => self.handle_rrq(&filename, &mode),
             Packet::WRQ { filename, mode } => self.handle_wrq(&filename, &mode),
-            _ => (None, TftpResult::Err(TftpError::NotIniatingPacket)),
+            _ => (None, Err(TftpError::NotIniatingPacket)),
         }
     }
 
-    fn handle_wrq(&mut self, filename: &str, mode: &str) -> (Option<Transfer<IO>>, TftpResult) {
+    fn handle_wrq(
+        &mut self,
+        filename: &str,
+        mode: &str,
+    ) -> (Option<Transfer<IO>>, Result<Packet, TftpError>) {
         if mode == "mail" {
             (
                 None,
-                TftpResult::Done(Some(Packet::ERROR {
+                Ok(Packet::ERROR {
                     code: ErrorCode::NoUser,
                     msg: "".to_owned(),
-                })),
+                }),
             )
         } else if let Ok(xfer) = Transfer::new_write(&mut self.io, filename) {
-            (Some(Transfer::Rx(xfer)), TftpResult::Reply(Packet::ACK(0)))
+            (Some(Transfer::Rx(xfer)), Ok(Packet::ACK(0)))
         } else {
             (
                 None,
-                TftpResult::Done(Some(Packet::ERROR {
+                Ok(Packet::ERROR {
                     code: ErrorCode::FileExists,
                     msg: "".to_owned(),
-                })),
+                }),
             )
         }
     }
 
-    fn handle_rrq(&mut self, filename: &str, mode: &str) -> (Option<Transfer<IO>>, TftpResult) {
+    fn handle_rrq(
+        &mut self,
+        filename: &str,
+        mode: &str,
+    ) -> (Option<Transfer<IO>>, Result<Packet, TftpError>) {
         if mode == "mail" {
             (
                 None,
-                TftpResult::Done(Some(Packet::ERROR {
+                Ok(Packet::ERROR {
                     code: ErrorCode::NoUser,
                     msg: "".to_owned(),
-                })),
+                }),
             )
         } else if let Ok(mut xfer) = Transfer::new_read(&mut self.io, filename) {
             let mut v = vec![];
@@ -94,7 +105,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
             xfer.sent_final = v.len() < 512;
             (
                 Some(Transfer::Tx(xfer)),
-                TftpResult::Reply(Packet::DATA {
+                Ok(Packet::DATA {
                     block_num: 1,
                     data: v,
                 }),
@@ -102,10 +113,10 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
         } else {
             (
                 None,
-                TftpResult::Done(Some(Packet::ERROR {
+                Ok(Packet::ERROR {
                     code: ErrorCode::FileNotFound,
                     msg: "".to_owned(),
-                })),
+                }),
             )
         }
     }

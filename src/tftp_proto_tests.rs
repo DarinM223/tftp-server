@@ -13,7 +13,7 @@ fn initial_ack_err() {
     let iof = TestIoFactory::new();
     let mut server = TftpServerProto::new(iof);
     let (xfer, res) = server.rx_initial(Packet::ACK(0));
-    assert_eq!(res, TftpResult::Err(TftpError::NotIniatingPacket));
+    assert_eq!(res, Err(TftpError::NotIniatingPacket));
     assert!(xfer.is_none());
 }
 
@@ -25,7 +25,7 @@ fn initial_data_err() {
         block_num: 1,
         data: vec![],
     });
-    assert_eq!(res, TftpResult::Err(TftpError::NotIniatingPacket));
+    assert_eq!(res, Err(TftpError::NotIniatingPacket));
     assert!(xfer.is_none());
 }
 
@@ -40,10 +40,10 @@ fn rrq_no_file_gets_error() {
     });
     assert_eq!(
         res,
-        TftpResult::Done(Some(Packet::ERROR {
+        Ok(Packet::ERROR {
             code: ErrorCode::FileNotFound,
             msg: "".into(),
-        }))
+        })
     );
     assert!(xfer.is_none());
 }
@@ -57,10 +57,10 @@ fn rrq_mail_gets_error() {
     });
     assert_eq!(
         res,
-        TftpResult::Done(Some(Packet::ERROR {
+        Ok(Packet::ERROR {
             code: ErrorCode::NoUser,
             msg: "".into(),
-        }))
+        })
     );
     assert!(xfer.is_none());
 }
@@ -84,7 +84,7 @@ fn rrq_small_file_ack_end() {
     });
     assert_eq!(
         res,
-        TftpResult::Reply(Packet::DATA {
+        Ok(Packet::DATA {
             block_num: 1,
             data: file_bytes.gen(132),
         })
@@ -105,7 +105,7 @@ fn rrq_1_block_file() {
     });
     assert_eq!(
         res,
-        TftpResult::Reply(Packet::DATA {
+        Ok(Packet::DATA {
             block_num: 1,
             data: file_bytes.gen(512),
         })
@@ -130,7 +130,7 @@ fn rrq_small_file_ack_wrong_block() {
     });
     assert_eq!(
         res,
-        TftpResult::Reply(Packet::DATA {
+        Ok(Packet::DATA {
             block_num: 1,
             data: file_bytes.gen(132),
         })
@@ -155,7 +155,7 @@ fn rrq_small_file_reply_with_data_illegal() {
     });
     assert_eq!(
         res,
-        TftpResult::Reply(Packet::DATA {
+        Ok(Packet::DATA {
             block_num: 1,
             data: file_bytes.gen(132),
         })
@@ -183,7 +183,7 @@ fn double_rrq() {
     });
     assert_eq!(
         res,
-        TftpResult::Reply(Packet::DATA {
+        Ok(Packet::DATA {
             block_num: 1,
             data: file_bytes.gen(132),
         })
@@ -207,7 +207,7 @@ fn rrq_2_blocks_ok() {
     });
     assert_eq!(
         res,
-        TftpResult::Reply(Packet::DATA {
+        Ok(Packet::DATA {
             block_num: 1,
             data: file_bytes.gen(512),
         })
@@ -232,7 +232,7 @@ fn rrq_2_blocks_second_lost_ack_repeat_ok() {
     });
     assert_eq!(
         res,
-        TftpResult::Reply(Packet::DATA {
+        Ok(Packet::DATA {
             block_num: 1,
             data: file_bytes.gen(512),
         })
@@ -260,7 +260,7 @@ fn rrq_large_file_blocknum_wraparound() {
     });
     assert_eq!(
         res,
-        TftpResult::Reply(Packet::DATA {
+        Ok(Packet::DATA {
             block_num: 1,
             data: file_bytes.gen(512),
         })
@@ -301,7 +301,7 @@ fn rrq_small_file_wrq_already_running() {
     });
     assert_eq!(
         res,
-        TftpResult::Reply(Packet::DATA {
+        Ok(Packet::DATA {
             block_num: 1,
             data: file_bytes.gen(132),
         })
@@ -325,7 +325,7 @@ fn rrq_small_file_err_kills_transfer() {
     });
     assert_eq!(
         res,
-        TftpResult::Reply(Packet::DATA {
+        Ok(Packet::DATA {
             block_num: 1,
             data: file_bytes.gen(512),
         })
@@ -354,10 +354,10 @@ fn wrq_already_exists_error() {
     });
     assert_eq!(
         res,
-        TftpResult::Done(Some(Packet::ERROR {
+        Ok(Packet::ERROR {
             code: ErrorCode::FileExists,
             msg: "".into(),
-        }))
+        })
     );
     assert!(xfer.is_none());
 }
@@ -392,10 +392,10 @@ fn wrq_mail_gets_error() {
     });
     assert_eq!(
         res,
-        TftpResult::Done(Some(Packet::ERROR {
+        Ok(Packet::ERROR {
             code: ErrorCode::NoUser,
             msg: "".into(),
-        }))
+        })
     );
     assert!(xfer.is_none());
 }
@@ -407,7 +407,7 @@ fn wrq_small_file_ack_end() {
         filename: file,
         mode: "octet".into(),
     });
-    assert_eq!(res, TftpResult::Reply(Packet::ACK(0)));
+    assert_eq!(res, Ok(Packet::ACK(0)));
     let mut xfer = xfer.unwrap();
     assert!(!xfer.is_done());
     assert_eq!(
@@ -427,7 +427,7 @@ fn wrq_1_block_file() {
         filename: file,
         mode: "octet".into(),
     });
-    assert_eq!(res, TftpResult::Reply(Packet::ACK(0)));
+    assert_eq!(res, Ok(Packet::ACK(0)));
     let mut xfer = xfer.unwrap();
     assert_eq!(
         xfer.rx(Packet::DATA {
@@ -459,7 +459,7 @@ fn wrq_small_file_reply_with_ack_illegal() {
         filename: file,
         mode: "octet".to_owned(),
     });
-    assert_eq!(res, TftpResult::Reply(Packet::ACK(0)));
+    assert_eq!(res, Ok(Packet::ACK(0)));
     let mut xfer = xfer.unwrap();
     assert_eq!(
         xfer.rx(Packet::DATA {
@@ -491,7 +491,7 @@ fn wrq_small_file_block_id_not_1_err() {
         filename: file,
         mode: "octet".to_owned(),
     });
-    assert_eq!(res, TftpResult::Reply(Packet::ACK(0)));
+    assert_eq!(res, Ok(Packet::ACK(0)));
     let mut xfer = xfer.unwrap();
     assert_eq!(
         xfer.rx(Packet::DATA {
@@ -520,7 +520,7 @@ fn wrq_large_file_blocknum_wraparound() {
         filename: file,
         mode: "octet".to_owned(),
     });
-    assert_eq!(res, TftpResult::Reply(Packet::ACK(0)));
+    assert_eq!(res, Ok(Packet::ACK(0)));
     let mut xfer = xfer.unwrap();
 
     let mut block_num = 1;

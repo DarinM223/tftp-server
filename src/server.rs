@@ -265,7 +265,6 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     }
 
     fn handle_server_packet(&mut self) -> Result<()> {
-        use self::TftpResult::*;
         let mut buf = [0; MAX_PACKET_SIZE];
 
         let (amt, src) = self.socket.recv_from(&mut buf)?;
@@ -273,17 +272,22 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 
         let new_conn_token = self.generate_token();
         let (xfer, res) = self.proto_handler.rx_initial(packet);
-        match res {
-            Err(e) => error!("{:?}", e),
-            Repeat => error!("cannot handle repeat of nothing"),
-            Reply(packet) => {
-                return self.create_connection(new_conn_token, xfer.unwrap(), packet, src);
+        let reply_packet = match res {
+            Err(e) => {
+                error!("{:?}", e);
+                return Ok(());
             }
-            Done(Some(packet)) => {
+            Ok(packet) => packet,
+        };
+
+        match xfer {
+            Some(xfer) => {
+                self.create_connection(new_conn_token, xfer, reply_packet, src);
+            }
+            None => {
                 let socket = create_socket(None)?;
-                socket.send_to(packet.into_bytes()?.to_slice(), src)?;
+                socket.send_to(reply_packet.into_bytes()?.to_slice(), src)?;
             }
-            Done(None) => {}
         }
         Ok(())
     }
