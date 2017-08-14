@@ -282,7 +282,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 
         match xfer {
             Some(xfer) => {
-                self.create_connection(new_conn_token, xfer, reply_packet, src);
+                self.create_connection(new_conn_token, xfer, reply_packet, src)?;
             }
             None => {
                 let socket = create_socket(None)?;
@@ -326,18 +326,11 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
                 None
             }
             Repeat => Some(&conn.last_packet),
-            Reply(packet) => {
+            Reply(packet) | Done(Some(packet)) => {
                 conn.last_packet = packet;
                 Some(&conn.last_packet)
             }
-            Done(response) => {
-                if let Some(packet) = response {
-                    conn.last_packet = packet;
-                    Some(&conn.last_packet)
-                } else {
-                    None
-                }
-            }
+            Done(None) => None
         };
 
         if let Some(packet) = response {
