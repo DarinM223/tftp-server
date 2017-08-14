@@ -90,7 +90,9 @@ fn rrq_small_file_ack_end() {
         })
     );
     let mut xfer = xfer.unwrap();
+    assert!(!xfer.is_done());
     assert_eq!(xfer.rx(Packet::ACK(1)), TftpResult::Done(None));
+    assert!(xfer.is_done());
     assert_eq!(xfer.rx(Packet::ACK(0)), TftpResult::Done(None));
 }
 
@@ -407,6 +409,7 @@ fn wrq_small_file_ack_end() {
     });
     assert_eq!(res, TftpResult::Reply(Packet::ACK(0)));
     let mut xfer = xfer.unwrap();
+    assert!(!xfer.is_done());
     assert_eq!(
         xfer.rx(Packet::DATA {
             block_num: 1,
@@ -414,6 +417,7 @@ fn wrq_small_file_ack_end() {
         }),
         TftpResult::Done(Some(Packet::ACK(1)))
     );
+    assert!(xfer.is_done());
 }
 
 #[test]

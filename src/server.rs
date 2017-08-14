@@ -103,8 +103,6 @@ struct ConnectionState<IO: IOAdapter> {
     last_packet: Packet,
     /// The address of the client socket to reply to.
     remote: SocketAddr,
-    /// Indicates the transfer has completed, and the next timeout will close the connection
-    dallying: bool,
 }
 
 pub type TftpServer = TftpServerImpl<FSAdapter>;
@@ -221,7 +219,6 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
                 transfer,
                 last_packet: packet,
                 remote,
-                dallying: false,
             },
         );
 
@@ -238,7 +235,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         }
 
         for token in tokens {
-            if Some(true) == self.connections.get(&token).map(|conn| conn.dallying) {
+            if Some(true) == self.connections.get(&token).map(|conn| conn.transfer.is_done()) {
                 self.cancel_connection(&token)?;
             } else if let Some(ref mut conn) = self.connections.get_mut(&token) {
                 conn.socket.send_to(
@@ -326,7 +323,6 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
                 Some(&conn.last_packet)
             }
             Done(response) => {
-                conn.dallying = true;
                 if let Some(packet) = response {
                     conn.last_packet = packet;
                     Some(&conn.last_packet)

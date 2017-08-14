@@ -153,9 +153,19 @@ impl<IO: IOAdapter> Transfer<IO> {
         })
     }
 
+    /// Checks to see if the transfer has completed
+    pub fn is_done(&self) -> bool {
+        match *self {
+            Tx(ref tx) => tx.complete,
+            Rx(ref rx) => rx.complete,
+        }
+    }
+
     /// Process and consume a received packet
     /// When the first `TftpResult::Done` is returned, the transfer is considered complete
     /// and all future calls to rx will also return `TftpResult::Done`
+    ///
+    /// Transfer completion can be checked via `Transfer::is_done()`
     pub fn rx(&mut self, packet: Packet) -> TftpResult {
         match packet {
             Packet::ACK(ack_block) => self.handle_ack(ack_block),
