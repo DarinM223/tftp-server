@@ -235,7 +235,11 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         }
 
         for token in tokens {
-            if Some(true) == self.connections.get(&token).map(|conn| conn.transfer.is_done()) {
+            if Some(true) ==
+                self.connections.get(&token).map(
+                    |conn| conn.transfer.is_done(),
+                )
+            {
                 self.cancel_connection(&token)?;
             } else if let Some(ref mut conn) = self.connections.get_mut(&token) {
                 conn.socket.send_to(
@@ -349,7 +353,8 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 
             for event in events.iter() {
                 match self.handle_token(event.token()) {
-                    Ok(_) | Err(TftpError::IoError(_)) => { /* swallow Io errors */ }
+                    Ok(_) |
+                    Err(TftpError::IoError(_)) => { /* swallow Io errors */ }
                     e => return e,
                 }
             }
