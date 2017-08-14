@@ -1,7 +1,5 @@
 #![cfg(test)]
 
-#![deny(warnings)]
-
 use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Write};

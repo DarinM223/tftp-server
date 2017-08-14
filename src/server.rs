@@ -1,6 +1,6 @@
 use mio::*;
 use mio_more::timer::{Timer, TimerError, Timeout};
-use mio::udp::UdpSocket;
+use mio::net::UdpSocket;
 use packet::{ErrorCode, MAX_PACKET_SIZE, Packet, PacketErr};
 use rand::{self, Rng};
 use std::collections::{HashMap, HashSet};
@@ -267,10 +267,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         use self::TftpResult::*;
         let mut buf = [0; MAX_PACKET_SIZE];
 
-        let (amt, src) = match self.socket.recv_from(&mut buf)? {
-            Some((amt, src)) => (amt, src),
-            None => return Ok(()),
-        };
+        let (amt, src) = self.socket.recv_from(&mut buf)?;
         let packet = Packet::read(&buf[..amt])?;
 
         let new_conn_token = self.generate_token();
@@ -302,10 +299,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
                 return Ok(());
             }
         };
-        let (amt, src) = match conn.socket.recv_from(&mut buf)? {
-            Some((amt, src)) => (amt, src),
-            None => return Ok(()),
-        };
+        let (amt, src) = conn.socket.recv_from(&mut buf)?;
 
         if conn.remote != src {
             // packet from somehere else, reply with error
@@ -358,7 +352,10 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             self.poll.poll(&mut events, None)?;
 
             for event in events.iter() {
-                self.handle_token(event.token())?;
+                match self.handle_token(event.token()) {
+                    Ok(_) | Err(TftpError::IoError(_)) => { /* swallow Io errors */ }
+                    e => return e,
+                }
             }
         }
     }
