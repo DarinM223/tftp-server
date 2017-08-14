@@ -241,6 +241,8 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     /// Handles the event when a timer times out.
     /// It gets the connection from the token and resends
     /// the last packet sent from the connection.
+    /// If the transfer associated with that connection is over,
+    /// it instead kills the connection.
     fn process_timer(&mut self) -> Result<()> {
         let mut tokens = Vec::new();
         while let Some(token) = self.timer.poll() {
@@ -266,9 +268,8 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         Ok(())
     }
 
-    /// Called for every event sent from the event loop. The event
-    /// is a token that can either be from the server, from an open connection,
-    /// or from a timeout timer for a connection.
+    /// Called to process an available I/O event for a token.
+    /// Normally these correspond to packets received on a socket or to a timeout
     fn handle_token(&mut self, token: Token, mut buf: &mut [u8]) -> Result<()> {
         match token {
             TIMER => self.process_timer(),
