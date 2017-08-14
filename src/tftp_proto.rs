@@ -1,7 +1,8 @@
 use std::io::{self, Write};
 use std::borrow::BorrowMut;
 use packet::{ErrorCode, Packet};
-use server::{IOAdapter, Read512};
+use server::IOAdapter;
+use read_512::*;
 
 #[derive(Debug, PartialEq)]
 pub enum TftpResult {
@@ -37,11 +38,18 @@ pub struct TftpServerProto<IO: IOAdapter> {
 
 impl<IO: IOAdapter> TftpServerProto<IO> {
     /// Creates a new instance with the provided IOAdapter
-    pub(crate) fn new(io: IO) -> Self {
+    pub fn new(io: IO) -> Self {
         TftpServerProto { io: io }
     }
 
-    pub(crate) fn rx_initial(&mut self, packet: Packet) -> (Option<Transfer<IO>>, TftpResult) {
+    /// Signals the receipt of a transfer-initiating packet (either RRQ of WRQ).
+    /// If a 'Transfer' is returned in the first tupe member, that must be used to
+    /// handle all future packets from the same client via `Transfer::rx`
+    /// If a 'Transfer' is not returned, then a transfer cannot be started from the
+    /// received packet
+    ///
+    /// In both cases any packet contained in the `TftpResult` should be sent back to the client
+    pub fn rx_initial(&mut self, packet: Packet) -> (Option<Transfer<IO>>, TftpResult) {
         match packet {
             Packet::RRQ { filename, mode } => self.handle_rrq(&filename, &mode),
             Packet::WRQ { filename, mode } => self.handle_wrq(&filename, &mode),
@@ -103,6 +111,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
     }
 }
 
+/// The state of an ongoing transfer with one client
 pub enum Transfer<IO: IOAdapter> {
     Rx(TransferRx<IO>),
     Tx(TransferTx<IO>),
@@ -144,7 +153,10 @@ impl<IO: IOAdapter> Transfer<IO> {
         })
     }
 
-    pub(crate) fn rx(&mut self, packet: Packet) -> TftpResult {
+    /// Process and consume a received packet
+    /// When the first `TftpResult::Done` is returned, the transfer is considered complete
+    /// and all future calls to rx will also return `TftpResult::Done`
+    pub fn rx(&mut self, packet: Packet) -> TftpResult {
         match packet {
             Packet::ACK(ack_block) => self.handle_ack(ack_block),
             Packet::DATA { block_num, data } => self.handle_data(block_num, data),

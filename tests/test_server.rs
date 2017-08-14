@@ -2,13 +2,25 @@ extern crate env_logger;
 extern crate tftp_server;
 
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::net::SocketAddr;
 use std::thread;
 use std::time::Duration;
 use tftp_server::packet::{ErrorCode, Packet, MAX_PACKET_SIZE};
 use tftp_server::server::{create_socket, Result, TftpServer};
-use tftp_server::server::Read512;
+
+trait Read512 {
+    fn read_512(&mut self, buf: &mut Vec<u8>) -> io::Result<usize>;
+}
+
+impl<T> Read512 for T
+where
+    T: Read,
+{
+    fn read_512(&mut self, mut buf: &mut Vec<u8>) -> io::Result<usize> {
+        self.take(512).read_to_end(&mut buf)
+    }
+}
 
 const TIMEOUT: u64 = 3;
 

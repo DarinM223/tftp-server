@@ -1,7 +1,7 @@
 use std::{result, str, io};
 use std::io::Write;
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
-use server::Read512;
+use read_512::Read512;
 
 #[derive(Debug)]
 pub enum PacketErr {

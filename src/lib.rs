@@ -11,3 +11,4 @@ pub mod packet;
 pub mod server;
 mod tftp_proto;
 mod tftp_proto_tests;
+mod read_512;
