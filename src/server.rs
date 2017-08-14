@@ -164,6 +164,19 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 
     /// Returns a new token created from incrementing a counter.
     fn generate_token(&mut self) -> Token {
+        use std::usize;
+        if self.connections
+            .len()
+            .saturating_add(1 /* server token */)
+            .saturating_add(1 /* timer token */) == usize::MAX
+        {
+            panic!("no more tokens, but impressive amount of memory");
+        }
+        while Token(self.new_token) == SERVER || Token(self.new_token) == TIMER ||
+            self.connections.contains_key(&Token(self.new_token))
+        {
+            self.new_token.wrapping_add(1);
+        }
         let token = Token(self.new_token);
         self.new_token += 1;
         token
