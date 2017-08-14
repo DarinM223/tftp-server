@@ -1,4 +1,5 @@
 use std::io::{self, Write};
+use std::borrow::BorrowMut;
 use packet::{ErrorCode, Packet};
 use server::{IOAdapter, Read512};
 
@@ -26,15 +27,6 @@ pub enum TftpError {
 
     /// The received packet type cannot be used to initiate a transfer
     NotIniatingPacket,
-}
-
-// TODO: this needs to be redone as a 2-variant enum (probably)
-pub struct Transfer<IO: IOAdapter> {
-    fread: Option<IO::R>,
-    expected_block_num: u16,
-    sent_final: bool,
-    fwrite: Option<IO::W>,
-    complete: bool,
 }
 
 /// The TFTP protocol and filesystem usage implementation,
@@ -67,7 +59,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                 })),
             )
         } else if let Ok(xfer) = Transfer::new_write(&mut self.io, filename) {
-            (Some(xfer), TftpResult::Reply(Packet::ACK(0)))
+            (Some(Transfer::Rx(xfer)), TftpResult::Reply(Packet::ACK(0)))
         } else {
             (
                 None,
@@ -90,10 +82,10 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
             )
         } else if let Ok(mut xfer) = Transfer::new_read(&mut self.io, filename) {
             let mut v = vec![];
-            xfer.fread.as_mut().unwrap().read_512(&mut v).unwrap();
+            xfer.fread.borrow_mut().read_512(&mut v).unwrap();
             xfer.sent_final = v.len() < 512;
             (
-                Some(xfer),
+                Some(Transfer::Tx(xfer)),
                 TftpResult::Reply(Packet::DATA {
                     block_num: 1,
                     data: v,
@@ -111,26 +103,42 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
     }
 }
 
+pub enum Transfer<IO: IOAdapter> {
+    Rx(TransferRx<IO>),
+    Tx(TransferTx<IO>),
+}
+use self::Transfer::*;
+
+pub struct TransferRx<IO: IOAdapter> {
+    fwrite: IO::W,
+    expected_block_num: u16,
+    complete: bool,
+}
+
+pub struct TransferTx<IO: IOAdapter> {
+    fread: IO::R,
+    expected_block_num: u16,
+    sent_final: bool,
+    complete: bool,
+}
+
 impl<IO: IOAdapter> Transfer<IO> {
-    pub(super) fn new_read(io: &mut IO, filename: &str) -> io::Result<Self> {
+    fn new_read(io: &mut IO, filename: &str) -> io::Result<TransferTx<IO>> {
         io.open_read(filename).map(|fread| {
-            Self {
-                fread: Some(fread),
+            TransferTx {
+                fread,
                 expected_block_num: 1,
                 sent_final: false,
-                fwrite: None,
                 complete: false,
             }
         })
     }
 
-    pub(super) fn new_write(io: &mut IO, filename: &str) -> io::Result<Self> {
+    fn new_write(io: &mut IO, filename: &str) -> io::Result<TransferRx<IO>> {
         io.create_new(filename).map(|fwrite| {
-            Self {
-                fread: None,
+            TransferRx {
+                fwrite,
                 expected_block_num: 1,
-                sent_final: false,
-                fwrite: Some(fwrite),
                 complete: false,
             }
         })
@@ -141,7 +149,11 @@ impl<IO: IOAdapter> Transfer<IO> {
             Packet::ACK(ack_block) => self.handle_ack(ack_block),
             Packet::DATA { block_num, data } => self.handle_data(block_num, data),
             Packet::ERROR { .. } => {
-                self.complete = true;
+                // receiving an error kills the transfer
+                match *self {
+                    Tx(ref mut tx) => tx.complete = true,
+                    Rx(ref mut rx) => rx.complete = true,
+                }
                 TftpResult::Done(None)
             }
             _ => TftpResult::Err(TftpError::TransferAlreadyRunning),
@@ -149,13 +161,37 @@ impl<IO: IOAdapter> Transfer<IO> {
     }
 
     fn handle_ack(&mut self, ack_block: u16) -> TftpResult {
-        if self.fwrite.is_some() {
-            self.complete = true;
-            TftpResult::Done(Some(Packet::ERROR {
-                code: ErrorCode::IllegalTFTP,
-                msg: "".to_owned(),
-            }))
-        } else if self.complete {
+        match *self {
+            Tx(ref mut tx) => tx.handle_ack(ack_block),
+            Rx(ref mut rx) => {
+                // wrong kind of packet, kill transfer
+                rx.complete = true;
+                TftpResult::Done(Some(Packet::ERROR {
+                    code: ErrorCode::IllegalTFTP,
+                    msg: "".to_owned(),
+                }))
+            }
+        }
+    }
+
+    fn handle_data(&mut self, block_num: u16, data: Vec<u8>) -> TftpResult {
+        match *self {
+            Rx(ref mut rx) => rx.handle_data(block_num, data),
+            Tx(ref mut tx) => {
+                // wrong kind of packet, kill transfer
+                tx.complete = true;
+                TftpResult::Done(Some(Packet::ERROR {
+                    code: ErrorCode::IllegalTFTP,
+                    msg: "".to_owned(),
+                }))
+            }
+        }
+    }
+}
+
+impl<IO: IOAdapter> TransferTx<IO> {
+    fn handle_ack(&mut self, ack_block: u16) -> TftpResult {
+        if self.complete {
             TftpResult::Done(None)
         } else if ack_block == self.expected_block_num.wrapping_sub(1) {
             TftpResult::Repeat
@@ -170,7 +206,7 @@ impl<IO: IOAdapter> Transfer<IO> {
             TftpResult::Done(None)
         } else {
             let mut v = vec![];
-            self.fread.as_mut().unwrap().read_512(&mut v).unwrap();
+            self.fread.borrow_mut().read_512(&mut v).unwrap();
             self.sent_final = v.len() < 512;
             self.expected_block_num = self.expected_block_num.wrapping_add(1);
             TftpResult::Reply(Packet::DATA {
@@ -179,15 +215,11 @@ impl<IO: IOAdapter> Transfer<IO> {
             })
         }
     }
+}
 
+impl<IO: IOAdapter> TransferRx<IO> {
     fn handle_data(&mut self, block_num: u16, data: Vec<u8>) -> TftpResult {
-        if self.fread.is_some() {
-            self.complete = true;
-            TftpResult::Done(Some(Packet::ERROR {
-                code: ErrorCode::IllegalTFTP,
-                msg: "".to_owned(),
-            }))
-        } else if self.complete {
+        if self.complete {
             TftpResult::Done(None)
         } else if block_num != self.expected_block_num {
             self.complete = true;
@@ -196,11 +228,7 @@ impl<IO: IOAdapter> Transfer<IO> {
                 msg: "Data packet lost".to_owned(),
             }))
         } else {
-            self.fwrite
-                .as_mut()
-                .unwrap()
-                .write_all(data.as_slice())
-                .unwrap();
+            self.fwrite.borrow_mut().write_all(data.as_slice()).unwrap();
             self.expected_block_num = block_num.wrapping_add(1);
             if data.len() < 512 {
                 self.complete = true;
