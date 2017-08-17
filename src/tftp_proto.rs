@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::borrow::BorrowMut;
 use packet::{ErrorCode, Packet};
 use server::IOAdapter;
@@ -124,26 +124,26 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
 
 /// The state of an ongoing transfer with one client
 pub enum Transfer<IO: IOAdapter> {
-    Rx(TransferRx<IO>),
-    Tx(TransferTx<IO>),
+    Rx(TransferRx<IO::W>),
+    Tx(TransferTx<IO::R>),
 }
 use self::Transfer::*;
 
-pub struct TransferRx<IO: IOAdapter> {
-    fwrite: IO::W,
+pub struct TransferRx<W: Write> {
+    fwrite: W,
     expected_block_num: u16,
     complete: bool,
 }
 
-pub struct TransferTx<IO: IOAdapter> {
-    fread: IO::R,
+pub struct TransferTx<R: Read> {
+    fread: R,
     expected_block_num: u16,
     sent_final: bool,
     complete: bool,
 }
 
 impl<IO: IOAdapter> Transfer<IO> {
-    fn new_read(io: &mut IO, filename: &str) -> io::Result<TransferTx<IO>> {
+    fn new_read(io: &mut IO, filename: &str) -> io::Result<TransferTx<IO::R>> {
         io.open_read(filename).map(|fread| {
             TransferTx {
                 fread,
@@ -154,7 +154,7 @@ impl<IO: IOAdapter> Transfer<IO> {
         })
     }
 
-    fn new_write(io: &mut IO, filename: &str) -> io::Result<TransferRx<IO>> {
+    fn new_write(io: &mut IO, filename: &str) -> io::Result<TransferRx<IO::W>> {
         io.create_new(filename).map(|fwrite| {
             TransferRx {
                 fwrite,
@@ -222,7 +222,7 @@ impl<IO: IOAdapter> Transfer<IO> {
     }
 }
 
-impl<IO: IOAdapter> TransferTx<IO> {
+impl<R: Read> TransferTx<R> {
     fn handle_ack(&mut self, ack_block: u16) -> TftpResult {
         if self.complete {
             TftpResult::Done(None)
@@ -250,7 +250,7 @@ impl<IO: IOAdapter> TransferTx<IO> {
     }
 }
 
-impl<IO: IOAdapter> TransferRx<IO> {
+impl<W: Write> TransferRx<W> {
     fn handle_data(&mut self, block_num: u16, data: Vec<u8>) -> TftpResult {
         if self.complete {
             TftpResult::Done(None)
