@@ -543,6 +543,35 @@ fn wrq_large_file_blocknum_wraparound() {
     );
 }
 
+#[test]
+fn readonly_policy() {
+    let mut iof = TestIoFactory::new();
+    let amt = 100;
+    let file_a = "file_a".to_owned();
+    let file_b = "file_b".to_owned();
+    iof.possible_files.insert(file_a.clone(), amt);
+    iof.server_present_files.insert(file_a.clone());
+    iof.possible_files.insert(file_b.clone(), amt);
+    iof.enforce_full_write = false;
+
+    let proxy = IOPolicyProxy::new_readonly(iof);
+    let mut v = vec![];
+    assert_eq!(
+        proxy
+            .open_read(&file_a)
+            .unwrap()
+            .read_to_end(&mut v)
+            .unwrap(),
+        amt
+    );
+    assert_eq!(v.len(), amt);
+
+    let mut proxy = proxy;
+    if let Ok(_) = proxy.create_new(&file_b) {
+        panic!("create should not succeed");
+    }
+}
+
 struct TestIoFactory {
     server_present_files: HashSet<String>,
     possible_files: HashMap<String, usize>,

@@ -273,10 +273,21 @@ impl<W: Write> TransferRx<W> {
     }
 }
 
-struct IOPolicyProxy<IO: IOAdapter>(IO);
+pub(crate) struct IOPolicyProxy<IO: IOAdapter> {
+    io: IO,
+    readonly: bool,
+}
+
 impl<IO: IOAdapter> IOPolicyProxy<IO> {
+    #[allow(dead_code)]
+    pub(crate) fn new_readonly(io: IO) -> Self {
+        Self { io, readonly: true }
+    }
     fn new(io: IO) -> Self {
-        IOPolicyProxy(io)
+        Self {
+            io,
+            readonly: false,
+        }
     }
 }
 
@@ -284,9 +295,16 @@ impl<IO: IOAdapter> IOAdapter for IOPolicyProxy<IO> {
     type R = IO::R;
     type W = IO::W;
     fn open_read(&self, filename: &str) -> io::Result<Self::R> {
-        self.0.open_read(filename)
+        self.io.open_read(filename)
     }
     fn create_new(&mut self, filename: &str) -> io::Result<Self::W> {
-        self.0.create_new(filename)
+        if self.readonly {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "cannot write",
+            ))
+        } else {
+            self.io.create_new(filename)
+        }
     }
 }
