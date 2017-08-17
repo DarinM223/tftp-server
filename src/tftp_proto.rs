@@ -33,13 +33,13 @@ pub enum TftpError {
 /// The TFTP protocol and filesystem usage implementation,
 /// used as backend for a TFTP server
 pub struct TftpServerProto<IO: IOAdapter> {
-    io: IO,
+    io_proxy: IOPolicyProxy<IO>,
 }
 
 impl<IO: IOAdapter> TftpServerProto<IO> {
     /// Creates a new instance with the provided IOAdapter
     pub fn new(io: IO) -> Self {
-        TftpServerProto { io: io }
+        TftpServerProto { io_proxy: IOPolicyProxy::new(io) }
     }
 
     /// Signals the receipt of a transfer-initiating packet (either RRQ of WRQ).
@@ -73,7 +73,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                     msg: "".to_owned(),
                 }),
             )
-        } else if let Ok(xfer) = Transfer::new_write(&mut self.io, filename) {
+        } else if let Ok(xfer) = Transfer::new_write(&mut self.io_proxy, filename) {
             (Some(Transfer::Rx(xfer)), Ok(Packet::ACK(0)))
         } else {
             (
@@ -99,7 +99,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                     msg: "".to_owned(),
                 }),
             )
-        } else if let Ok(mut xfer) = Transfer::new_read(&mut self.io, filename) {
+        } else if let Ok(mut xfer) = Transfer::new_read(&mut self.io_proxy, filename) {
             let mut v = vec![];
             xfer.fread.borrow_mut().read_512(&mut v).unwrap();
             xfer.sent_final = v.len() < 512;
@@ -270,5 +270,23 @@ impl<W: Write> TransferRx<W> {
                 TftpResult::Reply(Packet::ACK(block_num))
             }
         }
+    }
+}
+
+struct IOPolicyProxy<IO: IOAdapter>(IO);
+impl<IO: IOAdapter> IOPolicyProxy<IO> {
+    fn new(io: IO) -> Self {
+        IOPolicyProxy(io)
+    }
+}
+
+impl<IO: IOAdapter> IOAdapter for IOPolicyProxy<IO> {
+    type R = IO::R;
+    type W = IO::W;
+    fn open_read(&self, filename: &str) -> io::Result<Self::R> {
+        self.0.open_read(filename)
+    }
+    fn create_new(&mut self, filename: &str) -> io::Result<Self::W> {
+        self.0.create_new(filename)
     }
 }
