@@ -6,9 +6,8 @@ use rand::{self, Rng};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::net::{self, SocketAddr, SocketAddrV4};
+use std::net::{self, SocketAddr, Ipv4Addr};
 use std::result;
-use std::str::FromStr;
 use std::time::Duration;
 use tftp_proto::*;
 
@@ -107,14 +106,14 @@ struct ConnectionState<IO: IOAdapter> {
 
 pub struct ServerConfig {
     pub readonly: bool,
-    pub v4addr: Option<SocketAddrV4>,
+    pub v4addr: (Ipv4Addr, Option<u16>),
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
         ServerConfig {
             readonly: false,
-            v4addr: None,
+            v4addr: (Ipv4Addr::new(127, 0, 0, 1), None),
         }
     }
 }
@@ -139,10 +138,11 @@ pub struct TftpServerImpl<IO: IOAdapter> {
 
 impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     pub fn with_cfg(cfg: &ServerConfig) -> Result<Self> {
-        let socket = if let Some(v4) = cfg.v4addr {
-            UdpSocket::bind(&SocketAddr::V4(v4))?
-        } else {
-            UdpSocket::from_socket(create_socket(Some(Duration::from_secs(TIMEOUT)))?)?
+        let socket = match cfg.v4addr {
+            (v4, Some(port)) => UdpSocket::bind(&(v4, port).into())?,
+            (v4, None) => {
+                UdpSocket::from_socket(create_socket_addr(v4, Some(Duration::from_secs(TIMEOUT)))?)?
+            }
         };
         Self::new_from_socket(socket, cfg.readonly)
     }
@@ -407,6 +407,10 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 /// The range of valid ports is from 0 to 65535 and if the function
 /// cannot find a open port within 100 different random ports it returns an error.
 pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
+    create_socket_addr(Ipv4Addr::new(127, 0, 0, 1), timeout)
+}
+
+fn create_socket_addr(v4: Ipv4Addr, timeout: Option<Duration>) -> Result<net::UdpSocket> {
     let mut failed_ports = HashSet::new();
     for _ in 0..100 {
         let port = rand::thread_rng().gen_range(0, 65_535);
@@ -414,8 +418,7 @@ pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
             continue;
         }
 
-        let addr = format!("127.0.0.1:{}", port);
-        let socket_addr = SocketAddr::from_str(addr.as_str()).expect("Error parsing address");
+        let socket_addr: SocketAddr = (v4, port).into();
         if let Ok(socket) = net::UdpSocket::bind(&socket_addr) {
             if let Some(timeout) = timeout {
                 socket.set_read_timeout(Some(timeout))?;
