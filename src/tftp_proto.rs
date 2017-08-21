@@ -42,6 +42,10 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
         TftpServerProto { io_proxy: IOPolicyProxy::new(io) }
     }
 
+    pub fn new_readonly(io: IO) -> Self {
+        TftpServerProto { io_proxy: IOPolicyProxy::new_readonly(io) }
+    }
+
     /// Signals the receipt of a transfer-initiating packet (either RRQ of WRQ).
     /// If a 'Transfer' is returned in the first tupe member, that must be used to
     /// handle all future packets from the same client via `Transfer::rx`

@@ -14,6 +14,7 @@ rand = "0.3"
 byteorder = "1.0"
 log = "0.3.6"
 env_logger = "0.4"
+clap = "2.25"
 mio-more = { git = "https://github.com/carllerche/mio-more.git" }
 
 [dev-dependencies]

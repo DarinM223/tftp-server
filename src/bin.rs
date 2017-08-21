@@ -1,28 +1,49 @@
 extern crate env_logger;
 extern crate tftp_server;
 
-use tftp_server::server::TftpServer;
-use std::env;
+#[macro_use]
+extern crate clap;
+
+use tftp_server::server::{TftpServer, ServerConfig};
 use std::str::FromStr;
-use std::net::SocketAddr;
+use std::net::SocketAddrV4;
+
+use clap::{Arg, App};
 
 fn main() {
     env_logger::init().unwrap();
 
-    let args: Vec<_> = env::args().collect();
-    let mut server: TftpServer;
-    if args.len() > 1 {
-        let port = args[1].clone();
-        let addr = format!("127.0.0.1:{}", port);
-        let socket_addr = SocketAddr::from_str(addr.as_str()).expect("Error parsing address");
-        server = TftpServer::new_from_addr(&socket_addr).expect("Error creating server");
-    } else {
-        server = TftpServer::new().expect("Error creating server");
-        println!(
-            "Server created at address: {:?}",
-            server.local_addr().unwrap()
-        );
-    }
+    let matches = App::new("TFTP Server")
+        .version(crate_version!())
+        .arg(
+            Arg::with_name("IPv4 address")
+                .short("4a")
+                .long("ipv4-address")
+                .help("specifies the ipv4 address:port to listen on")
+                .takes_value(true)
+                .value_name("IPv4Addr[:PORT]"),
+        )
+        .arg(
+            Arg::with_name("readonly")
+                .short("r")
+                .long("readonly")
+                .help("rejects all write requests"),
+        )
+        .get_matches();
+
+    let cfg = ServerConfig {
+        readonly: matches.is_present("readonly"),
+        v4addr: matches
+            .value_of("ipv4-address")
+            .map(|s| SocketAddrV4::from_str(s).ok())
+            .expect("error parsing ipv4 address"),
+    };
+
+    let mut server = TftpServer::new(&cfg).expect("Error creating server");
+    println!(
+        "Server created at address: {:?}",
+        server.local_addr().unwrap()
+    );
 
     match server.run() {
         Ok(_) => println!("Server completed successfully!"),

@@ -6,7 +6,7 @@ use rand::{self, Rng};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::net::{self, SocketAddr};
+use std::net::{self, SocketAddr, SocketAddrV4};
 use std::result;
 use std::str::FromStr;
 use std::time::Duration;
@@ -105,6 +105,20 @@ struct ConnectionState<IO: IOAdapter> {
     remote: SocketAddr,
 }
 
+pub struct ServerConfig {
+    pub readonly: bool,
+    pub v4addr: Option<SocketAddrV4>,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        ServerConfig {
+            readonly: false,
+            v4addr: None,
+        }
+    }
+}
+
 pub type TftpServer = TftpServerImpl<FSAdapter>;
 
 pub struct TftpServerImpl<IO: IOAdapter> {
@@ -124,19 +138,21 @@ pub struct TftpServerImpl<IO: IOAdapter> {
 }
 
 impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
+    pub fn new(cfg: &ServerConfig) -> Result<Self> {
+        let socket = if let Some(v4) = cfg.v4addr {
+            UdpSocket::bind(&SocketAddr::V4(v4))?
+        } else {
+            UdpSocket::from_socket(create_socket(Some(Duration::from_secs(TIMEOUT)))?)?
+        };
+        Self::new_from_socket(socket, cfg.readonly)
+    }
+
     /// Creates a new TFTP server from a random open UDP port.
-    pub fn new() -> Result<Self> {
-        Self::new_from_socket(UdpSocket::from_socket(
-            create_socket(Some(Duration::from_secs(TIMEOUT)))?,
-        )?)
+    pub fn default() -> Result<Self> {
+        Self::new(&Default::default())
     }
 
-    /// Creates a new TFTP server from a socket address.
-    pub fn new_from_addr(addr: &SocketAddr) -> Result<Self> {
-        Self::new_from_socket(UdpSocket::bind(addr)?)
-    }
-
-    fn new_from_socket(socket: UdpSocket) -> Result<Self> {
+    fn new_from_socket(socket: UdpSocket, readonly: bool) -> Result<Self> {
         let poll = Poll::new()?;
         let timer = Timer::default();
         poll.register(
@@ -158,7 +174,11 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             timer: timer,
             socket: socket,
             connections: HashMap::new(),
-            proto_handler: TftpServerProto::new(Default::default()),
+            proto_handler: if readonly {
+                TftpServerProto::new_readonly(Default::default())
+            } else {
+                TftpServerProto::new(Default::default())
+            },
         })
     }
 
