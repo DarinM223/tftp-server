@@ -211,9 +211,7 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
             }
         }
 
-        // Would cause server to have an error if this is received.
-        // Used to test if connection is closed.
-        thread::sleep(Duration::from_millis(3500));
+        // Would cause server to have an error if not handled robustly
         socket.send_to(&[1, 2, 3], &recv_src)?;
     }
 
