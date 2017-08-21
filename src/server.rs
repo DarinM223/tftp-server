@@ -6,7 +6,7 @@ use rand::{self, Rng};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::net::{self, SocketAddr, Ipv4Addr};
+use std::net::{self, SocketAddr, IpAddr, Ipv4Addr};
 use std::result;
 use std::time::Duration;
 use tftp_proto::*;
@@ -223,9 +223,15 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         Ok(())
     }
 
-    /// Handles a packet sent to the main server connection.
-    /// It opens a new UDP connection in a random port and replies with either an ACK
-    /// or a DATA packet depending on the whether it received an RRQ or a WRQ packet.
+    fn local_v4(&self) -> Result<Ipv4Addr> {
+        if let IpAddr::V4(v4) = self.local_addr()?.ip() {
+            Ok(v4)
+        } else {
+            Err(TftpError::NoOpenSocket)
+        }
+    }
+
+    /// Opens a new UDP connection on a random port and sends the first reply packet back
     fn create_connection(
         &mut self,
         token: Token,
@@ -233,7 +239,10 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         packet: Packet,
         remote: SocketAddr,
     ) -> Result<()> {
-        let socket = UdpSocket::from_socket(create_socket(Some(Duration::from_secs(TIMEOUT)))?)?;
+        let socket = UdpSocket::from_socket(create_socket_addr(
+            self.local_v4()?,
+            Some(Duration::from_secs(TIMEOUT)),
+        )?)?;
         let timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT), token)?;
         self.poll.register(
             &socket,
