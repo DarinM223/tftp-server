@@ -56,6 +56,6 @@ Feature TODOs
 -----
 
 * [ ] serve from specified directory, not just the current one
-* [ ] treat directory as readonly (reject write requests)
+* [x] treat directory as readonly (reject write requests)
 * [ ] IPv6 support (and thus multiple address support)
 * [ ] CLI switches for logging
