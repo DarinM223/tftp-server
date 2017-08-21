@@ -283,7 +283,6 @@ pub(crate) struct IOPolicyProxy<IO: IOAdapter> {
 }
 
 impl<IO: IOAdapter> IOPolicyProxy<IO> {
-    #[allow(dead_code)]
     pub(crate) fn new_readonly(io: IO) -> Self {
         Self { io, readonly: true }
     }
