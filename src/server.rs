@@ -138,7 +138,7 @@ pub struct TftpServerImpl<IO: IOAdapter> {
 }
 
 impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
-    pub fn new(cfg: &ServerConfig) -> Result<Self> {
+    pub fn with_cfg(cfg: &ServerConfig) -> Result<Self> {
         let socket = if let Some(v4) = cfg.v4addr {
             UdpSocket::bind(&SocketAddr::V4(v4))?
         } else {
@@ -148,8 +148,8 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     }
 
     /// Creates a new TFTP server from a random open UDP port.
-    pub fn default() -> Result<Self> {
-        Self::new(&Default::default())
+    pub fn new() -> Result<Self> {
+        Self::with_cfg(&Default::default())
     }
 
     fn new_from_socket(socket: UdpSocket, readonly: bool) -> Result<Self> {
