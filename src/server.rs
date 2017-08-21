@@ -137,6 +137,7 @@ pub struct TftpServerImpl<IO: IOAdapter> {
 }
 
 impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
+    /// Creates a new TFTP server from the provided config
     pub fn with_cfg(cfg: &ServerConfig) -> Result<Self> {
         let socket = match cfg.v4addr {
             (v4, Some(port)) => UdpSocket::bind(&(v4, port).into())?,
