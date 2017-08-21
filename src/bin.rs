@@ -13,15 +13,16 @@ use clap::{Arg, App};
 fn main() {
     env_logger::init().unwrap();
 
+    let arg_ipv4 = "IPv4 address";
     let matches = App::new("TFTP Server")
         .version(crate_version!())
         .arg(
-            Arg::with_name("IPv4 address")
-                .short("4a")
-                .long("ipv4-address")
+            Arg::with_name(arg_ipv4)
+                .short("4")
+                .long("ipv4")
                 .help("specifies the ipv4 address:port to listen on")
                 .takes_value(true)
-                .value_name("IPv4Addr[:PORT]"),
+                .value_name("IPv4Addr:PORT"),
         )
         .arg(
             Arg::with_name("readonly")
@@ -33,7 +34,7 @@ fn main() {
 
     let cfg = ServerConfig {
         readonly: matches.is_present("readonly"),
-        v4addr: matches.value_of("ipv4-address").map(|s| {
+        v4addr: matches.value_of(arg_ipv4).map(|s| {
             SocketAddrV4::from_str(s).ok().expect(
                 "error parsing ipv4 address",
             )
