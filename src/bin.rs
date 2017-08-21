@@ -33,10 +33,11 @@ fn main() {
 
     let cfg = ServerConfig {
         readonly: matches.is_present("readonly"),
-        v4addr: matches
-            .value_of("ipv4-address")
-            .map(|s| SocketAddrV4::from_str(s).ok())
-            .expect("error parsing ipv4 address"),
+        v4addr: matches.value_of("ipv4-address").map(|s| {
+            SocketAddrV4::from_str(s).ok().expect(
+                "error parsing ipv4 address",
+            )
+        }),
     };
 
     let mut server = TftpServer::new(&cfg).expect("Error creating server");
