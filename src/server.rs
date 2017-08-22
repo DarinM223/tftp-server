@@ -104,8 +104,11 @@ struct ConnectionState<IO: IOAdapter> {
     remote: SocketAddr,
 }
 
+/// Struct used to specify working configuration of a server
 pub struct ServerConfig {
+    /// Specifies that the server should reject write requests
     pub readonly: bool,
+    /// The IPv4 address (and optionally port) on which the server should listen
     pub v4addr: (Ipv4Addr, Option<u16>),
 }
 
