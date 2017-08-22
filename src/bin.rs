@@ -14,6 +14,8 @@ fn main() {
     env_logger::init().unwrap();
 
     let arg_ipv4 = "IPv4 address";
+
+    // TODO: test argument handling
     let matches = App::new("TFTP Server")
         .version(crate_version!())
         .arg(
