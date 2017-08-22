@@ -420,9 +420,11 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 /// If an open port cannot be found within 100 random attempts,
 /// it returns an error
 pub fn create_socket_addr(v4: Ipv4Addr, timeout: Option<Duration>) -> Result<net::UdpSocket> {
+    use std::u16;
+
     let mut failed_ports = HashSet::new();
     for _ in 0..100 {
-        let port = rand::thread_rng().gen_range(0, 65_535);
+        let port = rand::thread_rng().gen_range(0, u16::MAX);
         if failed_ports.contains(&port) {
             continue;
         }
