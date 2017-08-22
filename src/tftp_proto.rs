@@ -70,23 +70,11 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
         mode: &str,
     ) -> (Option<Transfer<IO>>, Result<Packet, TftpError>) {
         if mode == "mail" {
-            (
-                None,
-                Ok(Packet::ERROR {
-                    code: ErrorCode::NoUser,
-                    msg: "".to_owned(),
-                }),
-            )
+            TftpServerProto::err_answer(ErrorCode::NoUser)
         } else if let Ok(xfer) = Transfer::new_write(&mut self.io_proxy, filename) {
             (Some(Transfer::Rx(xfer)), Ok(Packet::ACK(0)))
         } else {
-            (
-                None,
-                Ok(Packet::ERROR {
-                    code: ErrorCode::FileExists,
-                    msg: "".to_owned(),
-                }),
-            )
+            TftpServerProto::err_answer(ErrorCode::FileExists)
         }
     }
 
@@ -96,13 +84,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
         mode: &str,
     ) -> (Option<Transfer<IO>>, Result<Packet, TftpError>) {
         if mode == "mail" {
-            (
-                None,
-                Ok(Packet::ERROR {
-                    code: ErrorCode::NoUser,
-                    msg: "".to_owned(),
-                }),
-            )
+            TftpServerProto::err_answer(ErrorCode::NoUser)
         } else if let Ok(mut xfer) = Transfer::new_read(&mut self.io_proxy, filename) {
             let mut v = vec![];
             xfer.fread.borrow_mut().read_512(&mut v).unwrap();
@@ -115,14 +97,18 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                 }),
             )
         } else {
-            (
-                None,
-                Ok(Packet::ERROR {
-                    code: ErrorCode::FileNotFound,
-                    msg: "".to_owned(),
-                }),
-            )
+            TftpServerProto::err_answer(ErrorCode::FileNotFound)
         }
+    }
+
+    fn err_answer(code: ErrorCode) -> (Option<Transfer<IO>>, Result<Packet, TftpError>) {
+        (
+            None,
+            Ok(Packet::ERROR {
+                code,
+                msg: "".to_owned(),
+            }),
+        )
     }
 }
 
