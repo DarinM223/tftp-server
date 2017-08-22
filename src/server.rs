@@ -160,13 +160,13 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             &socket,
             SERVER,
             Ready::readable(),
-            PollOpt::edge(),
+            PollOpt::edge() | PollOpt::level(),
         )?;
         poll.register(
             &timer,
             TIMER,
             Ready::readable(),
-            PollOpt::edge(),
+            PollOpt::edge() | PollOpt::level(),
         )?;
 
         Ok(Self {
@@ -231,28 +231,22 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         }
     }
 
-    /// Opens a new UDP connection on a random port and sends the first reply packet back
+    /// Creates a new UDP connection from the provided arguments
     fn create_connection(
         &mut self,
         token: Token,
+        socket: UdpSocket,
         transfer: Transfer<IO>,
         packet: Packet,
         remote: SocketAddr,
     ) -> Result<()> {
-        let socket = UdpSocket::from_socket(create_socket_addr(
-            self.local_v4()?,
-            Some(Duration::from_secs(TIMEOUT)),
-        )?)?;
         let timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT), token)?;
         self.poll.register(
             &socket,
             token,
-            Ready::readable() | Ready::writable(),
-            PollOpt::edge(),
+            Ready::readable(),
+            PollOpt::edge() | PollOpt::level(),
         )?;
-        info!("Created connection with token: {:?}", token);
-
-        socket.send_to(packet.to_bytes()?.to_slice(), &remote)?;
 
         self.connections.insert(
             token,
@@ -264,6 +258,8 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
                 remote,
             },
         );
+
+        info!("Created connection with token: {:?}", token);
 
         Ok(())
     }
@@ -322,20 +318,24 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             Ok(packet) => packet,
         };
 
-        match xfer {
-            Some(xfer) => {
-                self.create_connection(
-                    new_conn_token,
-                    xfer,
-                    reply_packet,
-                    src,
-                )?;
-            }
-            None => {
-                let socket = create_socket_addr(self.local_v4()?, None)?;
-                socket.send_to(reply_packet.into_bytes()?.to_slice(), src)?;
-            }
+        let socket = UdpSocket::from_socket(create_socket_addr(
+            self.local_v4()?,
+            Some(Duration::from_secs(TIMEOUT)),
+        )?)?;
+
+        // send packet back for all cases
+        socket.send_to(reply_packet.to_bytes()?.to_slice(), &src)?;
+
+        if let Some(xfer) = xfer {
+            self.create_connection(
+                new_conn_token,
+                socket,
+                xfer,
+                reply_packet,
+                src,
+            )?;
         }
+
         Ok(())
     }
 
