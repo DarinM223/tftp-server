@@ -293,7 +293,7 @@ impl<IO: IOAdapter> IOAdapter for IOPolicyProxy<IO> {
     type W = IO::W;
     fn open_read(&self, filename: &str) -> io::Result<Self::R> {
         // TODO: test refusal to serve above directory
-        if filename.contains("..") || filename.starts_with("/") {
+        if filename.contains("..") || filename.starts_with('/') {
             Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "cannot read",
@@ -303,7 +303,7 @@ impl<IO: IOAdapter> IOAdapter for IOPolicyProxy<IO> {
         }
     }
     fn create_new(&mut self, filename: &str) -> io::Result<Self::W> {
-        if self.readonly || filename.contains("..") || filename.starts_with("/") {
+        if self.readonly || filename.contains("..") || filename.starts_with('/') {
             Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "cannot write",
