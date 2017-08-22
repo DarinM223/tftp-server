@@ -56,8 +56,8 @@ pub fn check_similar_files(file1: &mut File, file2: &mut File) -> Result<()> {
 fn timeout_test(server_addr: &SocketAddr) -> Result<()> {
     let socket = create_socket(None)?;
     let init_packet = Packet::WRQ {
-        filename: "hello.txt".to_string(),
-        mode: "octet".to_string(),
+        filename: "hello.txt".into(),
+        mode: "octet".into(),
     };
     socket.send_to(
         init_packet.into_bytes()?.to_slice(),
@@ -85,8 +85,8 @@ fn wrq_initial_ack_test(server_addr: &SocketAddr) -> Result<()> {
     let _ = fs::remove_file("./hello.txt");
 
     let input = Packet::WRQ {
-        filename: "hello.txt".to_string(),
-        mode: "octet".to_string(),
+        filename: "hello.txt".into(),
+        mode: "octet".into(),
     };
     let expected = Packet::ACK(0);
 
@@ -105,8 +105,8 @@ fn wrq_initial_ack_test(server_addr: &SocketAddr) -> Result<()> {
 
 fn rrq_initial_data_test(server_addr: &SocketAddr) -> Result<()> {
     let input = Packet::RRQ {
-        filename: "./files/hello.txt".to_string(),
-        mode: "octet".to_string(),
+        filename: "./files/hello.txt".into(),
+        mode: "octet".into(),
     };
     let mut file = File::open("./files/hello.txt")?;
     let mut buf = Vec::with_capacity(512);
@@ -131,8 +131,8 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
 
     let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
     let init_packet = Packet::WRQ {
-        filename: "hello.txt".to_string(),
-        mode: "octet".to_string(),
+        filename: "hello.txt".into(),
+        mode: "octet".into(),
     };
     socket.send_to(
         init_packet.into_bytes()?.to_slice(),
@@ -165,9 +165,7 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
             socket.send_to(data_packet.into_bytes()?.to_slice(), &src)?;
         }
 
-        // Would cause server to have an error if this is received.
-        // Used to test if connection is closed.
-        thread::sleep(Duration::from_millis(3500));
+        // Would cause server to have an error if not handled robustly
         socket.send_to(&[1, 2, 3], &recv_src)?;
     }
 
@@ -181,8 +179,8 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
 fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
     let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
     let init_packet = Packet::RRQ {
-        filename: "./files/hello.txt".to_string(),
-        mode: "octet".to_string(),
+        filename: "./files/hello.txt".into(),
+        mode: "octet".into(),
     };
     socket.send_to(
         init_packet.into_bytes()?.to_slice(),
@@ -229,8 +227,8 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
 fn wrq_file_exists_test(server_addr: &SocketAddr) -> Result<()> {
     let socket = create_socket(None)?;
     let init_packet = Packet::WRQ {
-        filename: "./files/hello.txt".to_string(),
-        mode: "octet".to_string(),
+        filename: "./files/hello.txt".into(),
+        mode: "octet".into(),
     };
     socket.send_to(
         init_packet.into_bytes()?.to_slice(),
@@ -251,8 +249,8 @@ fn wrq_file_exists_test(server_addr: &SocketAddr) -> Result<()> {
 fn rrq_file_not_found_test(server_addr: &SocketAddr) -> Result<()> {
     let socket = create_socket(None)?;
     let init_packet = Packet::RRQ {
-        filename: "./hello.txt".to_string(),
-        mode: "octet".to_string(),
+        filename: "./hello.txt".into(),
+        mode: "octet".into(),
     };
     socket.send_to(
         init_packet.into_bytes()?.to_slice(),
@@ -273,10 +271,8 @@ fn rrq_file_not_found_test(server_addr: &SocketAddr) -> Result<()> {
 fn main() {
     env_logger::init().unwrap();
     let server_addr = start_server().unwrap();
-    thread::sleep(Duration::from_millis(1000));
     wrq_initial_ack_test(&server_addr).unwrap();
     rrq_initial_data_test(&server_addr).unwrap();
-    thread::sleep(Duration::from_millis(1000));
     wrq_whole_file_test(&server_addr).unwrap();
     rrq_whole_file_test(&server_addr).unwrap();
     timeout_test(&server_addr).unwrap();
