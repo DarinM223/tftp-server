@@ -332,7 +332,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
                 )?;
             }
             None => {
-                let socket = create_socket(None)?;
+                let socket = create_socket_addr(self.local_v4()?, None)?;
                 socket.send_to(reply_packet.into_bytes()?.to_slice(), src)?;
             }
         }
