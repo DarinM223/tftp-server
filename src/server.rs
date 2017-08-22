@@ -159,7 +159,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         poll.register(
             &socket,
             SERVER,
-            Ready::readable() | Ready::writable(),
+            Ready::readable(),
             PollOpt::edge(),
         )?;
         poll.register(
