@@ -401,7 +401,9 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
                 match self.handle_token(event.token(), &mut scratch_buf) {
                     Ok(_) |
                     Err(TftpError::IoError(_)) => { /* swallow Io errors */ }
-                    Err(TftpError::PacketError(_)) => { error!("malformed packet"); }
+                    Err(TftpError::PacketError(_)) => {
+                        error!("malformed packet");
+                    }
                     e => return e,
                 }
             }
