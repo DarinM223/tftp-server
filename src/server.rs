@@ -417,13 +417,9 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 }
 
 /// Creates a `std::net::UdpSocket` on a random open UDP port.
-/// The range of valid ports is from 0 to 65535 and if the function
-/// cannot find a open port within 100 different random ports it returns an error.
-pub fn create_socket(timeout: Option<Duration>) -> Result<net::UdpSocket> {
-    create_socket_addr(Ipv4Addr::new(127, 0, 0, 1), timeout)
-}
-
-fn create_socket_addr(v4: Ipv4Addr, timeout: Option<Duration>) -> Result<net::UdpSocket> {
+/// If an open port cannot be found within 100 random attempts,
+/// it returns an error
+pub fn create_socket_addr(v4: Ipv4Addr, timeout: Option<Duration>) -> Result<net::UdpSocket> {
     let mut failed_ports = HashSet::new();
     for _ in 0..100 {
         let port = rand::thread_rng().gen_range(0, 65_535);
