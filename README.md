@@ -3,8 +3,6 @@ tftp-server
 
 #### A TFTP server implementation in Rust
 
-[![Build Status](https://travis-ci.org/DarinM223/tftp-server.svg?branch=master)](https://travis-ci.org/DarinM223/tftp-server)
-
 Building and running the server
 -------------------------------
 
