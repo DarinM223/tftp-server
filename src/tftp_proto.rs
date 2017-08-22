@@ -69,9 +69,13 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
         filename: &str,
         mode: &str,
     ) -> (Option<Transfer<IO>>, Result<Packet, TftpError>) {
-        if mode == "mail" {
-            TftpServerProto::err_answer(ErrorCode::NoUser)
-        } else if let Ok(xfer) = Transfer::new_write(&mut self.io_proxy, filename) {
+        match mode {
+            "octet" => {}
+            "mail" => return TftpServerProto::err_answer(ErrorCode::NoUser),
+            _ => return TftpServerProto::err_answer(ErrorCode::NotDefined),
+        }
+
+        if let Ok(xfer) = Transfer::new_write(&mut self.io_proxy, filename) {
             (Some(Transfer::Rx(xfer)), Ok(Packet::ACK(0)))
         } else {
             TftpServerProto::err_answer(ErrorCode::FileExists)
@@ -83,9 +87,13 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
         filename: &str,
         mode: &str,
     ) -> (Option<Transfer<IO>>, Result<Packet, TftpError>) {
-        if mode == "mail" {
-            TftpServerProto::err_answer(ErrorCode::NoUser)
-        } else if let Ok(mut xfer) = Transfer::new_read(&mut self.io_proxy, filename) {
+        match mode {
+            "octet" => {}
+            "mail" => return TftpServerProto::err_answer(ErrorCode::NoUser),
+            _ => return TftpServerProto::err_answer(ErrorCode::NotDefined),
+        }
+
+        if let Ok(mut xfer) = Transfer::new_read(&mut self.io_proxy, filename) {
             let mut v = vec![];
             xfer.fread.borrow_mut().read_512(&mut v).unwrap();
             xfer.sent_final = v.len() < 512;

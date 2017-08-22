@@ -65,6 +65,40 @@ fn rrq_mail_gets_error() {
     assert!(xfer.is_none());
 }
 
+#[test]
+fn rrq_netascii_gets_error() {
+    let (mut server, file, _) = rrq_fixture(132);
+    let (xfer, res) = server.rx_initial(Packet::RRQ {
+        filename: file,
+        mode: "netascii".into(),
+    });
+    assert_eq!(
+        res,
+        Ok(Packet::ERROR {
+            code: ErrorCode::NotDefined,
+            msg: "".into(),
+        })
+    );
+    assert!(xfer.is_none());
+}
+
+#[test]
+fn wrq_netascii_gets_error() {
+    let (mut server, file, _) = wrq_fixture(132);
+    let (xfer, res) = server.rx_initial(Packet::WRQ {
+        filename: file,
+        mode: "netascii".into(),
+    });
+    assert_eq!(
+        res,
+        Ok(Packet::ERROR {
+            code: ErrorCode::NotDefined,
+            msg: "".into(),
+        })
+    );
+    assert!(xfer.is_none());
+}
+
 fn rrq_fixture(file_size: usize) -> (TftpServerProto<TestIoFactory>, String, ByteGen) {
     let mut iof = TestIoFactory::new();
     let file = "textfile".to_owned();
