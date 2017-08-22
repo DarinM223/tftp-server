@@ -5,7 +5,6 @@ use read_512::Read512;
 
 #[derive(Debug)]
 pub enum PacketErr {
-    OverflowSize,
     InvalidOpCode,
     StrOutOfBounds,
     OpCodeOutOfBounds,
@@ -244,10 +243,6 @@ fn read_error_packet(mut bytes: &[u8]) -> Result<Packet> {
 }
 
 fn rw_packet_bytes(packet: OpCode, filename: &str, mode: &str) -> Result<PacketData> {
-    if filename.len() + mode.len() > MAX_PACKET_SIZE {
-        return Err(PacketErr::OverflowSize);
-    }
-
     let mut buf = Vec::with_capacity(MAX_PACKET_SIZE);
 
     buf.write_u16::<BigEndian>(packet as u16)?;
@@ -279,10 +274,6 @@ fn ack_packet_bytes(block_num: u16) -> Result<PacketData> {
 }
 
 fn error_packet_bytes(code: ErrorCode, msg: &str) -> Result<PacketData> {
-    if msg.len() + 5 > MAX_PACKET_SIZE {
-        return Err(PacketErr::OverflowSize);
-    }
-
     let mut buf = Vec::with_capacity(MAX_PACKET_SIZE);
 
     buf.write_u16::<BigEndian>(OpCode::ERROR as u16)?;
