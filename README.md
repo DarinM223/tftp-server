@@ -69,7 +69,7 @@ $ RUST_LOG=tftp_server=info cargo test
 Feature TODOs
 -----
 
-* [ ] serve from specified directory, not just the current one
+* [x] serve from specified directory, not just the current one
 * [x] treat directory as readonly (reject write requests)
 * [ ] IPv6 support (and thus multiple address support)
 * [ ] CLI switches for logging

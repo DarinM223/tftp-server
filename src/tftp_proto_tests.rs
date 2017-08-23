@@ -11,7 +11,7 @@ use tftp_proto::*;
 #[test]
 fn initial_ack_err() {
     let iof = TestIoFactory::new();
-    let mut server = TftpServerProto::new(iof);
+    let mut server = TftpServerProto::new(iof, Default::default());
     let (xfer, res) = server.rx_initial(Packet::ACK(0));
     assert_eq!(res, Err(TftpError::NotIniatingPacket));
     assert!(xfer.is_none());
@@ -20,7 +20,7 @@ fn initial_ack_err() {
 #[test]
 fn initial_data_err() {
     let iof = TestIoFactory::new();
-    let mut server = TftpServerProto::new(iof);
+    let mut server = TftpServerProto::new(iof, Default::default());
     let (xfer, res) = server.rx_initial(Packet::DATA {
         block_num: 1,
         data: vec![],
@@ -33,7 +33,7 @@ fn initial_data_err() {
 fn rrq_no_file_gets_error() {
     let iof = TestIoFactory::new();
     let file = "textfile".to_owned();
-    let mut server = TftpServerProto::new(iof);
+    let mut server = TftpServerProto::new(iof, Default::default());
     let (xfer, res) = server.rx_initial(Packet::RRQ {
         filename: file,
         mode: "octet".into(),
@@ -104,7 +104,7 @@ fn rrq_fixture(file_size: usize) -> (TftpServerProto<TestIoFactory>, String, Byt
     let file = "textfile".to_owned();
     iof.possible_files.insert(file.clone(), file_size);
     iof.server_present_files.insert(file.clone());
-    let serv = TftpServerProto::new(iof);
+    let serv = TftpServerProto::new(iof, Default::default());
     let file_bytes = ByteGen::new(&file);
     (serv, file, file_bytes)
 }
@@ -381,7 +381,7 @@ fn wrq_already_exists_error() {
     let file = "textfile".to_owned();
     iof.possible_files.insert(file.clone(), 132);
     iof.server_present_files.insert(file.clone());
-    let mut server = TftpServerProto::new(iof);
+    let mut server = TftpServerProto::new(iof, Default::default());
     let (xfer, res) = server.rx_initial(Packet::WRQ {
         filename: file,
         mode: "octet".into(),
@@ -400,7 +400,7 @@ fn wrq_fixture(file_size: usize) -> (TftpServerProto<TestIoFactory>, String, Byt
     let mut iof = TestIoFactory::new();
     let file = "textfile".to_owned();
     iof.possible_files.insert(file.clone(), file_size);
-    let serv = TftpServerProto::new(iof);
+    let serv = TftpServerProto::new(iof, Default::default());
     let file_bytes = ByteGen::new(&file);
     (serv, file, file_bytes)
 }
@@ -412,7 +412,7 @@ fn wrq_fixture_early_termination(
     let file = "textfile".to_owned();
     iof.possible_files.insert(file.clone(), file_size);
     iof.enforce_full_write = false;
-    let serv = TftpServerProto::new(iof);
+    let serv = TftpServerProto::new(iof, Default::default());
     let file_bytes = ByteGen::new(&file);
     (serv, file, file_bytes)
 }
@@ -578,7 +578,7 @@ fn wrq_large_file_blocknum_wraparound() {
 }
 
 #[test]
-fn readonly_policy() {
+fn policy_readonly() {
     let mut iof = TestIoFactory::new();
     let amt = 100;
     let file_a = "file_a".to_owned();
@@ -586,9 +586,14 @@ fn readonly_policy() {
     iof.possible_files.insert(file_a.clone(), amt);
     iof.server_present_files.insert(file_a.clone());
     iof.possible_files.insert(file_b.clone(), amt);
-    iof.enforce_full_write = false;
 
-    let proxy = IOPolicyProxy::new_readonly(iof);
+    let proxy = IOPolicyProxy::new(
+        iof,
+        IOPolicyCfg {
+            readonly: true,
+            path: None,
+        },
+    );
     let mut v = vec![];
     assert_eq!(
         proxy
@@ -604,6 +609,32 @@ fn readonly_policy() {
     if let Ok(_) = proxy.create_new(&file_b) {
         panic!("create should not succeed");
     }
+}
+
+#[test]
+fn policy_remap_directory() {
+    // TODO: improve this test
+    let mut iof = TestIoFactory::new();
+    let amt = 100;
+    let file_a = "the_new_path/file_a".to_owned();
+    let file_b = "the_new_path/file_b".to_owned();
+    iof.possible_files.insert(file_a.clone(), amt);
+    iof.possible_files.insert(file_b.clone(), amt);
+    iof.server_present_files.insert(file_a.clone());
+    iof.enforce_full_write = false;
+
+    let mut proxy = IOPolicyProxy::new(
+        iof,
+        IOPolicyCfg {
+            readonly: false,
+            path: Some("the_new_path".into()),
+        },
+    );
+    assert!(proxy.open_read("the_new_path/file_a").is_err());
+    assert!(proxy.open_read("file_a").is_ok());
+
+    assert!(proxy.create_new("the_new_path/file_b").is_err());
+    assert!(proxy.create_new("file_b").is_ok());
 }
 
 struct TestIoFactory {
@@ -627,6 +658,11 @@ impl IOAdapter for TestIoFactory {
         if self.server_present_files.contains(filename) {
             let size = *self.possible_files.get(filename).unwrap();
             Ok(GeneratingReader::new(filename, size))
+        } else if !self.possible_files.contains_key(filename) {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "unexpected file",
+            ))
         } else {
             Err(io::Error::new(
                 io::ErrorKind::NotFound,
@@ -639,6 +675,11 @@ impl IOAdapter for TestIoFactory {
             Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 "test file already there",
+            ))
+        } else if !self.possible_files.contains_key(filename) {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "unexpected file",
             ))
         } else {
             self.server_present_files.insert(filename.into());

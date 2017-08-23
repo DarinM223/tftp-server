@@ -108,6 +108,8 @@ struct ConnectionState<IO: IOAdapter> {
 pub struct ServerConfig {
     /// Specifies that the server should reject write requests
     pub readonly: bool,
+    /// The directory the server will serve from instead of the default
+    pub dir: Option<String>,
     /// The IPv4 address (and optionally port) on which the server should listen
     pub v4addr: (Ipv4Addr, Option<u16>),
 }
@@ -116,6 +118,7 @@ impl Default for ServerConfig {
     fn default() -> Self {
         ServerConfig {
             readonly: false,
+            dir: None,
             v4addr: (Ipv4Addr::new(127, 0, 0, 1), None),
         }
     }
@@ -148,7 +151,13 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
                 UdpSocket::from_socket(create_socket_addr(v4, Some(Duration::from_secs(TIMEOUT)))?)?
             }
         };
-        Self::new_from_socket(socket, cfg.readonly)
+        Self::new_from_socket(
+            socket,
+            IOPolicyCfg {
+                readonly: cfg.readonly,
+                path: None,
+            },
+        )
     }
 
     /// Creates a new TFTP server from a random open UDP port.
@@ -156,7 +165,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         Self::with_cfg(&Default::default())
     }
 
-    fn new_from_socket(socket: UdpSocket, readonly: bool) -> Result<Self> {
+    fn new_from_socket(socket: UdpSocket, io_policy: IOPolicyCfg) -> Result<Self> {
         let poll = Poll::new()?;
         let timer = Timer::default();
         poll.register(
@@ -178,11 +187,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             timer: timer,
             socket: socket,
             connections: HashMap::new(),
-            proto_handler: if readonly {
-                TftpServerProto::new_readonly(Default::default())
-            } else {
-                TftpServerProto::new(Default::default())
-            },
+            proto_handler: TftpServerProto::new(Default::default(), io_policy),
         })
     }
 

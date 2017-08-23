@@ -38,12 +38,8 @@ pub struct TftpServerProto<IO: IOAdapter> {
 
 impl<IO: IOAdapter> TftpServerProto<IO> {
     /// Creates a new instance with the provided IOAdapter
-    pub fn new(io: IO) -> Self {
-        TftpServerProto { io_proxy: IOPolicyProxy::new(io) }
-    }
-
-    pub fn new_readonly(io: IO) -> Self {
-        TftpServerProto { io_proxy: IOPolicyProxy::new_readonly(io) }
+    pub fn new(io: IO, cfg: IOPolicyCfg) -> Self {
+        TftpServerProto { io_proxy: IOPolicyProxy::new(io, cfg) }
     }
 
     /// Signals the receipt of a transfer-initiating packet (either RRQ of WRQ).
@@ -271,20 +267,28 @@ impl<W: Write> TransferRx<W> {
     }
 }
 
+pub struct IOPolicyCfg {
+    pub readonly: bool,
+    pub path: Option<String>,
+}
+
+impl Default for IOPolicyCfg {
+    fn default() -> Self {
+        Self {
+            readonly: false,
+            path: None,
+        }
+    }
+}
+
 pub(crate) struct IOPolicyProxy<IO: IOAdapter> {
     io: IO,
-    readonly: bool,
+    policy: IOPolicyCfg,
 }
 
 impl<IO: IOAdapter> IOPolicyProxy<IO> {
-    pub(crate) fn new_readonly(io: IO) -> Self {
-        Self { io, readonly: true }
-    }
-    fn new(io: IO) -> Self {
-        Self {
-            io,
-            readonly: false,
-        }
+    pub(crate) fn new(io: IO, cfg: IOPolicyCfg) -> Self {
+        Self { io, policy: cfg }
     }
 }
 
@@ -298,16 +302,23 @@ impl<IO: IOAdapter> IOAdapter for IOPolicyProxy<IO> {
                 io::ErrorKind::PermissionDenied,
                 "cannot read",
             ))
+        } else if let Some(ref path) = self.policy.path {
+            let full = path.to_owned() + "/" + filename;
+            self.io.open_read(&full)
         } else {
             self.io.open_read(filename)
         }
     }
+
     fn create_new(&mut self, filename: &str) -> io::Result<Self::W> {
-        if self.readonly || filename.contains("..") || filename.starts_with('/') {
+        if self.policy.readonly || filename.contains("..") || filename.starts_with('/') {
             Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "cannot write",
             ))
+        } else if let Some(ref path) = self.policy.path {
+            let full = path.to_owned() + "/" + filename;
+            self.io.create_new(&full)
         } else {
             self.io.create_new(filename)
         }

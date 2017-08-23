@@ -7,6 +7,7 @@ extern crate clap;
 use tftp_server::server::{TftpServer, ServerConfig};
 use std::str::FromStr;
 use std::net::{Ipv4Addr, SocketAddrV4};
+use std::path::Path;
 
 use clap::{Arg, App};
 
@@ -14,6 +15,7 @@ fn main() {
     env_logger::init().unwrap();
 
     let arg_ipv4 = "IPv4 address";
+    let arg_dir = "Directory";
 
     // TODO: test argument handling
     let matches = App::new("TFTP Server")
@@ -25,6 +27,14 @@ fn main() {
                 .help("specifies the ipv4 address[:port] to listen on")
                 .takes_value(true)
                 .value_name("IPv4Addr[:PORT]"),
+        )
+        .arg(
+            Arg::with_name(arg_dir)
+                .short("d")
+                .long("drectory")
+                .help("specifies the directory to serve (current by default)")
+                .takes_value(true)
+                .value_name("DIRECTORY"),
         )
         .arg(
             Arg::with_name("readonly")
@@ -51,6 +61,17 @@ fn main() {
     let cfg = ServerConfig {
         readonly: matches.is_present("readonly"),
         v4addr,
+        dir: match matches.value_of(arg_dir) {
+            Some(dir) => {
+                assert!(
+                    Path::new(dir).exists(),
+                    "specified path {} does not exist",
+                    dir
+                );
+                Some(dir.into())
+            }
+            _ => None,
+        },
     };
 
     let mut server = TftpServer::with_cfg(&cfg).expect("Error creating server");
