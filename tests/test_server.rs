@@ -42,12 +42,16 @@ pub fn start_server() -> Result<SocketAddr> {
     Ok(addr)
 }
 
-pub fn check_similar_files(file1: &mut File, file2: &mut File) -> Result<()> {
+pub fn assert_files_identical(fa: &str, fb: &str) -> Result<()> {
+    assert!(fs::metadata(fa).is_ok());
+    assert!(fs::metadata(fb).is_ok());
+
+    let (mut f1, mut f2) = (File::open(fa)?, File::open(fb)?);
     let mut buf1 = String::new();
     let mut buf2 = String::new();
 
-    file1.read_to_string(&mut buf1)?;
-    file2.read_to_string(&mut buf2)?;
+    f1.read_to_string(&mut buf1)?;
+    f2.read_to_string(&mut buf2)?;
 
     assert_eq!(buf1, buf2);
     Ok(())
@@ -169,9 +173,7 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
         socket.send_to(&[1, 2, 3], &recv_src)?;
     }
 
-    assert!(fs::metadata("./hello.txt").is_ok());
-    let (mut f1, mut f2) = (File::open("./hello.txt")?, File::open("./files/hello.txt")?);
-    check_similar_files(&mut f1, &mut f2)?;
+    assert_files_identical("./hello.txt", "./files/hello.txt")?;
     assert!(fs::remove_file("./hello.txt").is_ok());
     Ok(())
 }
@@ -217,9 +219,7 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
         socket.send_to(&[1, 2, 3], &recv_src)?;
     }
 
-    assert!(fs::metadata("./hello.txt").is_ok());
-    let (mut f1, mut f2) = (File::open("./hello.txt")?, File::open("./files/hello.txt")?);
-    check_similar_files(&mut f1, &mut f2)?;
+    assert_files_identical("./hello.txt", "./files/hello.txt")?;
     assert!(fs::remove_file("./hello.txt").is_ok());
     Ok(())
 }
