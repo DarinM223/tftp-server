@@ -6,7 +6,7 @@ extern crate clap;
 
 use tftp_server::server::{TftpServer, ServerConfig};
 use std::str::FromStr;
-use std::net::{Ipv4Addr, SocketAddrV4};
+use std::net::*;
 use std::path::Path;
 
 use clap::{Arg, App};
@@ -14,19 +14,19 @@ use clap::{Arg, App};
 fn main() {
     env_logger::init().unwrap();
 
-    let arg_ipv4 = "IPv4 address";
+    let arg_ip = "IP address";
     let arg_dir = "Directory";
 
     // TODO: test argument handling
     let matches = App::new("TFTP Server")
         .version(crate_version!())
         .arg(
-            Arg::with_name(arg_ipv4)
-                .short("4")
-                .long("ipv4")
-                .help("specifies the ipv4 address[:port] to listen on")
+            Arg::with_name(arg_ip)
+                .short("a")
+                .long("address")
+                .help("specifies the address[:port] to listen on")
                 .takes_value(true)
-                .value_name("IPv4Addr[:PORT]"),
+                .value_name("IPAddr[:PORT]"),
         )
         .arg(
             Arg::with_name(arg_dir)
@@ -44,23 +44,23 @@ fn main() {
         )
         .get_matches();
 
-    let v4addr = match matches.value_of(arg_ipv4) {
-        None => (Ipv4Addr::new(127, 0, 0, 1), None),
+    let addr = match matches.value_of(arg_ip) {
+        None => (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), None),
         Some(s) => {
-            // try parsing in order: first ipv4:port, then just ipv4
-            if let Ok(sk4) = SocketAddrV4::from_str(s) {
-                (*sk4.ip(), Some(sk4.port()))
-            } else if let Ok(v4) = Ipv4Addr::from_str(s) {
-                (v4, None)
+            // try parsing in order: first ip:port, then just ip
+            if let Ok(sk) = SocketAddr::from_str(s) {
+                (sk.ip(), Some(sk.port()))
+            } else if let Ok(ip) = IpAddr::from_str(s) {
+                (ip, None)
             } else {
-                panic!("error parsing argument \"{}\" as ipv4 address", s);
+                panic!("error parsing argument \"{}\" as ip address", s);
             }
         }
     };
 
     let cfg = ServerConfig {
         readonly: matches.is_present("readonly"),
-        v4addr,
+        addr,
         dir: match matches.value_of(arg_dir) {
             Some(dir) => {
                 assert!(

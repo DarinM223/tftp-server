@@ -110,8 +110,8 @@ pub struct ServerConfig {
     pub readonly: bool,
     /// The directory the server will serve from instead of the default
     pub dir: Option<String>,
-    /// The IPv4 address (and optionally port) on which the server should listen
-    pub v4addr: (Ipv4Addr, Option<u16>),
+    /// The IP address (and optionally port) on which the server should listen
+    pub addr: (IpAddr, Option<u16>),
 }
 
 impl Default for ServerConfig {
@@ -119,7 +119,7 @@ impl Default for ServerConfig {
         ServerConfig {
             readonly: false,
             dir: None,
-            v4addr: (Ipv4Addr::new(127, 0, 0, 1), None),
+            addr: (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), None),
         }
     }
 }
@@ -145,10 +145,10 @@ pub struct TftpServerImpl<IO: IOAdapter> {
 impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     /// Creates a new TFTP server from the provided config
     pub fn with_cfg(cfg: &ServerConfig) -> Result<Self> {
-        let socket = match cfg.v4addr {
-            (v4, Some(port)) => UdpSocket::bind(&(v4, port).into())?,
-            (v4, None) => {
-                UdpSocket::from_socket(create_socket_addr(v4, Some(Duration::from_secs(TIMEOUT)))?)?
+        let socket = match cfg.addr {
+            (ip, Some(port)) => UdpSocket::bind(&(ip, port).into())?,
+            (ip, None) => {
+                UdpSocket::from_socket(create_socket_addr(ip, Some(Duration::from_secs(TIMEOUT)))?)?
             }
         };
         Self::new_from_socket(
@@ -229,14 +229,6 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             conn.timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT), *token)?;
         }
         Ok(())
-    }
-
-    fn local_v4(&self) -> Result<Ipv4Addr> {
-        if let IpAddr::V4(v4) = self.local_addr()?.ip() {
-            Ok(v4)
-        } else {
-            Err(TftpError::NoOpenSocket)
-        }
     }
 
     /// Creates a new UDP connection from the provided arguments
@@ -327,7 +319,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         };
 
         let socket = UdpSocket::from_socket(create_socket_addr(
-            self.local_v4()?,
+            self.local_addr()?.ip(),
             Some(Duration::from_secs(TIMEOUT)),
         )?)?;
 
@@ -427,7 +419,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 /// Creates a `std::net::UdpSocket` on a random open UDP port.
 /// If an open port cannot be found within 100 random attempts,
 /// it returns an error
-pub fn create_socket_addr(v4: Ipv4Addr, timeout: Option<Duration>) -> Result<net::UdpSocket> {
+pub fn create_socket_addr(ip: IpAddr, timeout: Option<Duration>) -> Result<net::UdpSocket> {
     use std::u16;
 
     let mut failed_ports = HashSet::new();
@@ -437,7 +429,7 @@ pub fn create_socket_addr(v4: Ipv4Addr, timeout: Option<Duration>) -> Result<net
             continue;
         }
 
-        let socket_addr: SocketAddr = (v4, port).into();
+        let socket_addr: SocketAddr = (ip, port).into();
         if let Ok(socket) = net::UdpSocket::bind(&socket_addr) {
             if let Some(timeout) = timeout {
                 socket.set_read_timeout(Some(timeout))?;
