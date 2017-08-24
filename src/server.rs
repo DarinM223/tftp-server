@@ -2,7 +2,7 @@ use mio::*;
 use mio_more::timer::{Timer, TimerError, Timeout};
 use mio::net::UdpSocket;
 use packet::{ErrorCode, MAX_PACKET_SIZE, Packet, PacketErr};
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::net::{self, SocketAddr, IpAddr, Ipv4Addr};
@@ -162,7 +162,11 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         )
     }
 
-    fn new_from_socket(socket: UdpSocket, timeout: Duration, io_policy: IOPolicyCfg) -> Result<Self> {
+    fn new_from_socket(
+        socket: UdpSocket,
+        timeout: Duration,
+        io_policy: IOPolicyCfg,
+    ) -> Result<Self> {
         let poll = Poll::new()?;
         let timer = Timer::default();
         poll.register(
