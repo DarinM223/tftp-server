@@ -17,6 +17,7 @@ fn main() {
 
     let arg_ip = "IP address";
     let arg_dir = "Directory";
+    let arg_timeout = "Timeout";
 
     // TODO: test argument handling
     let matches = App::new("TFTP Server")
@@ -36,6 +37,16 @@ fn main() {
                 .help("specifies the directory to serve (current by default)")
                 .takes_value(true)
                 .value_name("DIRECTORY"),
+        )
+        .arg(
+            Arg::with_name(arg_timeout)
+                .short("t")
+                .long("timeout")
+                .help(
+                    "the (natural) number of seconds before an idle transfer is terminated",
+                )
+                .takes_value(true)
+                .value_name("SECONDS"),
         )
         .arg(
             Arg::with_name("readonly")
@@ -59,6 +70,20 @@ fn main() {
         }
     };
 
+    let timeout = Duration::from_secs(
+        matches
+            .value_of(arg_timeout)
+            .map(|s| {
+                u64::from_str(s).expect(&format!("error parsing {} as timeout", s))
+            })
+            .map(|n| if n == 0 {
+                panic!("timeout may not be 0 seconds")
+            } else {
+                n
+            })
+            .unwrap_or(3),
+    );
+
     let cfg = ServerConfig {
         readonly: matches.is_present("readonly"),
         addr,
@@ -73,7 +98,7 @@ fn main() {
             }
             _ => None,
         },
-        timeout: Duration::from_secs(3),
+        timeout,
     };
 
     let mut server = TftpServer::with_cfg(&cfg).expect("Error creating server");
