@@ -155,7 +155,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             socket,
             IOPolicyCfg {
                 readonly: cfg.readonly,
-                path: None,
+                path: cfg.dir,
             },
         )
     }
