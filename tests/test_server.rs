@@ -7,7 +7,7 @@ use std::net::{SocketAddr, IpAddr, Ipv4Addr, UdpSocket};
 use std::thread;
 use std::time::Duration;
 use tftp_server::packet::{ErrorCode, Packet, MAX_PACKET_SIZE};
-use tftp_server::server::{create_socket_addr, Result, TftpServer};
+use tftp_server::server::{Result, TftpServer};
 
 trait Read512 {
     fn read_512(&mut self, buf: &mut Vec<u8>) -> io::Result<usize>;
@@ -25,7 +25,10 @@ where
 const TIMEOUT: u64 = 3;
 
 fn create_socket(timeout: Option<Duration>) -> Result<UdpSocket> {
-    create_socket_addr(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), timeout)
+    let socket = UdpSocket::bind((IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0))?;
+    socket.set_read_timeout(timeout)?;
+    socket.set_write_timeout(timeout)?;
+    Ok(socket)
 }
 
 /// Starts the server in a new thread.

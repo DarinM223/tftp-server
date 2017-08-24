@@ -2,8 +2,7 @@ use mio::*;
 use mio_more::timer::{Timer, TimerError, Timeout};
 use mio::net::UdpSocket;
 use packet::{ErrorCode, MAX_PACKET_SIZE, Packet, PacketErr};
-use rand::{self, Rng};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::net::{self, SocketAddr, IpAddr, Ipv4Addr};
@@ -11,8 +10,6 @@ use std::result;
 use std::time::Duration;
 use tftp_proto::*;
 
-/// Timeout time until packet is re-sent.
-const TIMEOUT: u64 = 3;
 /// The token used by the server UDP socket.
 const SERVER: Token = Token(0);
 /// The token used by the timer.
@@ -112,6 +109,8 @@ pub struct ServerConfig {
     pub dir: Option<String>,
     /// The IP address (and optionally port) on which the server should listen
     pub addr: (IpAddr, Option<u16>),
+    /// The idle time until a connection with a client is closed
+    pub timeout: Duration,
 }
 
 impl Default for ServerConfig {
@@ -120,6 +119,7 @@ impl Default for ServerConfig {
             readonly: false,
             dir: None,
             addr: (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), None),
+            timeout: Duration::from_secs(3),
         }
     }
 }
@@ -133,6 +133,8 @@ pub struct TftpServerImpl<IO: IOAdapter> {
     poll: Poll,
     /// The main timer that can be used to set multiple timeout events.
     timer: Timer<Token>,
+    /// The connection timeout
+    timeout: Duration,
     /// The main server socket that receives RRQ and WRQ packets
     /// and creates a new separate UDP connection.
     socket: UdpSocket,
@@ -143,29 +145,24 @@ pub struct TftpServerImpl<IO: IOAdapter> {
 }
 
 impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
-    /// Creates a new TFTP server from the provided config
-    pub fn with_cfg(cfg: &ServerConfig) -> Result<Self> {
-        let socket = match cfg.addr {
-            (ip, Some(port)) => UdpSocket::bind(&(ip, port).into())?,
-            (ip, None) => {
-                UdpSocket::from_socket(create_socket_addr(ip, Some(Duration::from_secs(TIMEOUT)))?)?
-            }
-        };
-        Self::new_from_socket(
-            socket,
-            IOPolicyCfg {
-                readonly: cfg.readonly,
-                path: cfg.dir,
-            },
-        )
-    }
-
     /// Creates a new TFTP server from a random open UDP port.
     pub fn new() -> Result<Self> {
         Self::with_cfg(&Default::default())
     }
 
-    fn new_from_socket(socket: UdpSocket, io_policy: IOPolicyCfg) -> Result<Self> {
+    /// Creates a new TFTP server from the provided config
+    pub fn with_cfg(cfg: &ServerConfig) -> Result<Self> {
+        Self::new_from_socket(
+            make_udp_socket(cfg.addr.0, cfg.addr.1)?,
+            cfg.timeout,
+            IOPolicyCfg {
+                readonly: cfg.readonly,
+                path: cfg.dir.clone(),
+            },
+        )
+    }
+
+    fn new_from_socket(socket: UdpSocket, timeout: Duration, io_policy: IOPolicyCfg) -> Result<Self> {
         let poll = Poll::new()?;
         let timer = Timer::default();
         poll.register(
@@ -183,9 +180,10 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 
         Ok(Self {
             new_token: 2,
-            poll: poll,
-            timer: timer,
-            socket: socket,
+            poll,
+            timer,
+            timeout,
+            socket,
             connections: HashMap::new(),
             proto_handler: TftpServerProto::new(Default::default(), io_policy),
         })
@@ -226,7 +224,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     fn reset_timeout(&mut self, token: &Token) -> Result<()> {
         if let Some(ref mut conn) = self.connections.get_mut(token) {
             self.timer.cancel_timeout(&conn.timeout);
-            conn.timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT), *token)?;
+            conn.timeout = self.timer.set_timeout(self.timeout, *token)?;
         }
         Ok(())
     }
@@ -240,7 +238,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         packet: Packet,
         remote: SocketAddr,
     ) -> Result<()> {
-        let timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT), token)?;
+        let timeout = self.timer.set_timeout(self.timeout, token)?;
         self.poll.register(
             &socket,
             token,
@@ -318,10 +316,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             Ok(packet) => packet,
         };
 
-        let socket = UdpSocket::from_socket(create_socket_addr(
-            self.local_addr()?.ip(),
-            Some(Duration::from_secs(TIMEOUT)),
-        )?)?;
+        let socket = make_udp_socket(self.local_addr()?.ip(), None)?;
 
         // send packet back for all cases
         socket.send_to(reply_packet.to_bytes()?.to_slice(), &src)?;
@@ -416,29 +411,15 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     }
 }
 
-/// Creates a `std::net::UdpSocket` on a random open UDP port.
-/// If an open port cannot be found within 100 random attempts,
-/// it returns an error
-pub fn create_socket_addr(ip: IpAddr, timeout: Option<Duration>) -> Result<net::UdpSocket> {
-    use std::u16;
+fn make_udp_socket(ip: IpAddr, port: Option<u16>) -> Result<UdpSocket> {
+    let socket = net::UdpSocket::bind((ip, port.unwrap_or(0)))?;
 
-    let mut failed_ports = HashSet::new();
-    for _ in 0..100 {
-        let port = rand::thread_rng().gen_range(0, u16::MAX);
-        if failed_ports.contains(&port) {
-            continue;
-        }
+    socket.set_nonblocking(true)?;
 
-        let socket_addr: SocketAddr = (ip, port).into();
-        if let Ok(socket) = net::UdpSocket::bind(&socket_addr) {
-            if let Some(timeout) = timeout {
-                socket.set_read_timeout(Some(timeout))?;
-                socket.set_write_timeout(Some(timeout))?;
-            }
-            return Ok(socket);
-        }
-        failed_ports.insert(port);
+    // FIXME: this seems like it should work since From<IoError> for TftpError is implemented
+    //UdpSocket::from_socket(socket)
+    match UdpSocket::from_socket(socket) {
+        Ok(sock) => Ok(sock),
+        Err(err) => Err(err.into()),
     }
-
-    Err(TftpError::NoOpenSocket)
 }

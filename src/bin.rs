@@ -8,6 +8,7 @@ use tftp_server::server::{TftpServer, ServerConfig};
 use std::str::FromStr;
 use std::net::*;
 use std::path::Path;
+use std::time::Duration;
 
 use clap::{Arg, App};
 
@@ -72,6 +73,7 @@ fn main() {
             }
             _ => None,
         },
+        timeout: Duration::from_secs(3),
     };
 
     let mut server = TftpServer::with_cfg(&cfg).expect("Error creating server");
