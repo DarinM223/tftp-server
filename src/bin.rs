@@ -18,6 +18,7 @@ fn main() {
     let arg_ip = "IP address";
     let arg_dir = "Directory";
     let arg_timeout = "Timeout";
+    let arg_readonly = "Readonly";
 
     // TODO: test argument handling
     let matches = App::new("TFTP Server")
@@ -49,7 +50,7 @@ fn main() {
                 .value_name("SECONDS"),
         )
         .arg(
-            Arg::with_name("readonly")
+            Arg::with_name(arg_readonly)
                 .short("r")
                 .long("readonly")
                 .help("rejects all write requests"),
@@ -85,7 +86,7 @@ fn main() {
     );
 
     let cfg = ServerConfig {
-        readonly: matches.is_present("readonly"),
+        readonly: matches.is_present(arg_readonly),
         addr,
         dir: match matches.value_of(arg_dir) {
             Some(dir) => {
