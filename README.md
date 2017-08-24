@@ -18,20 +18,20 @@ In this example, the port number picked was 61204.
 You can also explicitly specify the address (and optionally the port) on which it will listen
 
 ```
-$ ./target/debug/tftp_server_bin --ipv4 192.168.0.54
+$ ./target/debug/tftp_server_bin --address 192.168.0.54
 Server created at address: V4(192.168.0.54:43604)
 ```
 
 or
 
 ```
-$ ./target/debug/tftp_server_bin --ipv4 192.168.0.54:35000
+$ ./target/debug/tftp_server_bin --address 192.168.0.54:35000
 Server created at address: V4(192.168.0.54:35000)
 ```
 
 If the server cannot bind to the given address:port (or if it cannot find a random port for the address) then it will panic with an IoError.
 ```
-$ ./target/debug/tftp_server_bin --ipv4 127.0.0.1:20
+$ ./target/debug/tftp_server_bin --address 127.0.0.1:20
 thread 'main' panicked at 'Error creating server: IoError(Error { repr: Os { code: 13, message: "Permission denied" } })', ../src/libcore/result.rs:799
 note: Run with `RUST_BACKTRACE=1` for a backtrace.
 ```
@@ -42,7 +42,7 @@ Features
 All features are implemented in the library. The binary target is a only an argument-parsing thin wrapper over it for direct usage conveninence.
 
 Available features:
-* `-4` or `--ipv4` to specify address:port to listen on (currently only a single IPv4 one)
+* `-a` or `--address` to specify address:port to listen on
 * `-r` will make the server treat the served directory as read-only (it will reject all write requests)
 * see TODO section below
 
@@ -71,5 +71,6 @@ Feature TODOs
 
 * [x] serve from specified directory, not just the current one
 * [x] treat directory as readonly (reject write requests)
-* [ ] IPv6 support (and thus multiple address support)
+* [x] IPv6 support
+* [ ] multiple address support
 * [ ] CLI switches for logging
