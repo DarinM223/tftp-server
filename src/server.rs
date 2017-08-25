@@ -417,10 +417,5 @@ fn make_udp_socket(ip: IpAddr, port: Option<u16>) -> Result<UdpSocket> {
 
     socket.set_nonblocking(true)?;
 
-    // FIXME: this seems like it should work since From<IoError> for TftpError is implemented
-    //UdpSocket::from_socket(socket)
-    match UdpSocket::from_socket(socket) {
-        Ok(sock) => Ok(sock),
-        Err(err) => Err(err.into()),
-    }
+    Ok(UdpSocket::from_socket(socket)?)
 }
