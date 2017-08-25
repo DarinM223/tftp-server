@@ -93,9 +93,8 @@ fn timeout_test(server_addr: &SocketAddr) -> Result<()> {
 struct WritingTransfer {
     socket: UdpSocket,
     file: File,
-    reply_buf: [u8; MAX_PACKET_SIZE],
     block_num: u16,
-    dest: String,
+    server_file: String,
     remote: Option<SocketAddr>,
     server_addr: SocketAddr,
     first: bool,
@@ -103,56 +102,52 @@ struct WritingTransfer {
 
 impl WritingTransfer {
     fn new(from: &str, server_addr: &SocketAddr, to: &str) -> Self {
-        let xfer = Self {
+        Self {
             socket: create_socket(Some(Duration::from_secs(TIMEOUT))).unwrap(),
             file: File::open(from).expect(&format!("cannot open {}", from)),
-            reply_buf: [0; MAX_PACKET_SIZE],
             block_num: 0,
-            dest: to.into(),
+            server_file: to.into(),
             remote: None,
-            server_addr: server_addr.clone(),
+            server_addr: *server_addr,
             first: true,
-        };
-        xfer
+        }
     }
-}
 
-impl Iterator for WritingTransfer {
-    type Item = ();
-    fn next(&mut self) -> Option<()> {
-        if self.first {
+    fn step(&mut self, rx_buf: &mut [u8; MAX_PACKET_SIZE]) -> Option<()> {
+        let (pack, dest) = if self.first {
+            self.first = false;
             let init_packet = Packet::WRQ {
-                filename: self.dest.clone(),
+                filename: self.server_file.clone(),
                 mode: "octet".into(),
             };
-            self.socket.send_to(
-                init_packet.into_bytes().unwrap().to_slice(),
-                self.server_addr,
-            ).expect("cannot send first WRQ packet");
-            self.first = false;
+            (init_packet, self.server_addr)
         } else {
-            let (amt, src) = self.socket.recv_from(&mut self.reply_buf).expect("cannot receive");
+            let (amt, src) = self.socket.recv_from(rx_buf).expect("cannot receive");
             if self.remote.is_some() {
                 assert_eq!(self.remote.unwrap(), src, "transfer source changed");
             } else {
                 self.remote = Some(src);
             }
-            let reply_packet = Packet::read(&self.reply_buf[0..amt]).unwrap();
-            assert_eq!(reply_packet, Packet::ACK(self.block_num));
+            let expected = Packet::read(&rx_buf[0..amt]).unwrap();
+            assert_eq!(expected, Packet::ACK(self.block_num));
             self.block_num = self.block_num.wrapping_add(1);
 
             // Read and send data packet
-            let mut buf = Vec::with_capacity(512);
-            match self.file.read_512(&mut buf) {
+            let mut data = Vec::with_capacity(512);
+            match self.file.read_512(&mut data) {
                 Err(_) | Ok(0) => return None,
                 _ => {}
             };
             let data_packet = Packet::DATA {
                 block_num: self.block_num,
-                data: buf,
+                data,
             };
-            self.socket.send_to(data_packet.into_bytes().unwrap().to_slice(), &src).unwrap();
-        }
+            (data_packet, src)
+        };
+
+        self.socket
+            .send_to(pack.to_bytes().unwrap().to_slice(), &dest)
+            .expect(&format!("cannot send packet {:?} to {:?}", pack, dest));
         Some(())
     }
 }
@@ -163,11 +158,12 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
 
     let mut tx = WritingTransfer::new("./files/hello.txt", server_addr, "hello.txt");
 
-    while let Some(_) = tx.next() {};
+    let mut scratch_buf = [0; MAX_PACKET_SIZE];
+    while let Some(_) = tx.step(&mut scratch_buf) {}
 
     // Would cause server to have an error if not handled robustly
     tx.socket.send_to(&[1, 2, 3], &tx.remote.unwrap())?;
-    
+
     assert_files_identical("./hello.txt", "./files/hello.txt");
     assert!(fs::remove_file("./hello.txt").is_ok());
     Ok(())
