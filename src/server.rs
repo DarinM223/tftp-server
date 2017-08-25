@@ -24,9 +24,6 @@ pub enum TftpError {
     /// error code. The server should reply with an error packet
     /// to the given socket address when handling this error.
     TftpError(ErrorCode, SocketAddr),
-    /// Error returned when the server cannot
-    /// find a random open UDP port within 100 tries.
-    NoOpenSocket,
 }
 
 impl From<io::Error> for TftpError {
