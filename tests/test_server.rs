@@ -87,51 +87,6 @@ fn timeout_test(server_addr: &SocketAddr) -> Result<()> {
     Ok(())
 }
 
-fn wrq_initial_ack_test(server_addr: &SocketAddr) -> Result<()> {
-    // remore file if it was left over after a test that panicked
-    let _ = fs::remove_file("./hello.txt");
-
-    let input = Packet::WRQ {
-        filename: "hello.txt".into(),
-        mode: "octet".into(),
-    };
-    let expected = Packet::ACK(0);
-
-    let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
-    socket.send_to(input.into_bytes()?.to_slice(), server_addr)?;
-
-    let mut buf = [0; MAX_PACKET_SIZE];
-    let amt = socket.recv(&mut buf)?;
-    assert_eq!(Packet::read(&buf[0..amt])?, expected);
-
-    // Test that hello.txt was created and remove hello.txt
-    assert!(fs::metadata("./hello.txt").is_ok());
-    assert!(fs::remove_file("./hello.txt").is_ok());
-    Ok(())
-}
-
-fn rrq_initial_data_test(server_addr: &SocketAddr) -> Result<()> {
-    let input = Packet::RRQ {
-        filename: "./files/hello.txt".into(),
-        mode: "octet".into(),
-    };
-    let mut file = File::open("./files/hello.txt")?;
-    let mut buf = Vec::with_capacity(512);
-    file.read_512(&mut buf)?;
-    let expected = Packet::DATA {
-        block_num: 1,
-        data: buf,
-    };
-
-    let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
-    socket.send_to(input.into_bytes()?.to_slice(), server_addr)?;
-
-    let mut buf = [0; MAX_PACKET_SIZE];
-    let amt = socket.recv(&mut buf)?;
-    assert_eq!(Packet::read(&buf[0..amt])?, expected);
-    Ok(())
-}
-
 fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
     // remore file if it was left over after a test that panicked
     let _ = fs::remove_file("./hello.txt");
@@ -274,8 +229,6 @@ fn rrq_file_not_found_test(server_addr: &SocketAddr) -> Result<()> {
 fn main() {
     env_logger::init().unwrap();
     let server_addr = start_server().unwrap();
-    wrq_initial_ack_test(&server_addr).unwrap();
-    rrq_initial_data_test(&server_addr).unwrap();
     wrq_whole_file_test(&server_addr).unwrap();
     rrq_whole_file_test(&server_addr).unwrap();
     timeout_test(&server_addr).unwrap();
