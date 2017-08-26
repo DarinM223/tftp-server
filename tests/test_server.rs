@@ -94,60 +94,60 @@ struct WritingTransfer {
     socket: UdpSocket,
     file: File,
     block_num: u16,
-    server_file: String,
     remote: Option<SocketAddr>,
-    server_addr: SocketAddr,
-    first: bool,
 }
 
 impl WritingTransfer {
-    fn new(from: &str, server_addr: &SocketAddr, to: &str) -> Self {
-        Self {
+    fn start(local_file: &str, server_addr: &SocketAddr, server_file: &str) -> Self {
+        let xfer = Self {
             socket: create_socket(Some(Duration::from_secs(TIMEOUT))).unwrap(),
-            file: File::open(from).expect(&format!("cannot open {}", from)),
+            file: File::open(local_file).expect(&format!("cannot open {}", local_file)),
             block_num: 0,
-            server_file: to.into(),
             remote: None,
-            server_addr: *server_addr,
-            first: true,
-        }
+        };
+        let init_packet = Packet::WRQ {
+            filename: server_file.into(),
+            mode: "octet".into(),
+        };
+        xfer.socket
+            .send_to(init_packet.to_bytes().unwrap().to_slice(), &server_addr)
+            .expect(&format!(
+                "cannot send initial packet {:?} to {:?}",
+                init_packet,
+                server_addr
+            ));
+        xfer
     }
 
     fn step(&mut self, rx_buf: &mut [u8; MAX_PACKET_SIZE]) -> Option<()> {
-        let (pack, dest) = if self.first {
-            self.first = false;
-            let init_packet = Packet::WRQ {
-                filename: self.server_file.clone(),
-                mode: "octet".into(),
-            };
-            (init_packet, self.server_addr)
+        let (amt, src) = self.socket.recv_from(rx_buf).expect("cannot receive");
+        if self.remote.is_some() {
+            assert_eq!(self.remote.unwrap(), src, "transfer source changed");
         } else {
-            let (amt, src) = self.socket.recv_from(rx_buf).expect("cannot receive");
-            if self.remote.is_some() {
-                assert_eq!(self.remote.unwrap(), src, "transfer source changed");
-            } else {
-                self.remote = Some(src);
-            }
-            let expected = Packet::read(&rx_buf[0..amt]).unwrap();
-            assert_eq!(expected, Packet::ACK(self.block_num));
-            self.block_num = self.block_num.wrapping_add(1);
+            self.remote = Some(src);
+        }
+        let received = Packet::read(&rx_buf[0..amt]).unwrap();
+        assert_eq!(received, Packet::ACK(self.block_num));
+        self.block_num = self.block_num.wrapping_add(1);
 
-            // Read and send data packet
-            let mut data = Vec::with_capacity(512);
-            match self.file.read_512(&mut data) {
-                Err(_) | Ok(0) => return None,
-                _ => {}
-            };
-            let data_packet = Packet::DATA {
-                block_num: self.block_num,
-                data,
-            };
-            (data_packet, src)
+        // Read and send data packet
+        let mut data = Vec::with_capacity(512);
+        match self.file.read_512(&mut data) {
+            Err(_) | Ok(0) => return None,
+            _ => {}
+        };
+        let data_packet = Packet::DATA {
+            block_num: self.block_num,
+            data,
         };
 
         self.socket
-            .send_to(pack.to_bytes().unwrap().to_slice(), &dest)
-            .expect(&format!("cannot send packet {:?} to {:?}", pack, dest));
+            .send_to(data_packet.to_bytes().unwrap().to_slice(), &src)
+            .expect(&format!(
+                "cannot send packet {:?} to {:?}",
+                data_packet,
+                src
+            ));
         Some(())
     }
 }
@@ -156,9 +156,9 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
     // remore file if it was left over after a test that panicked
     let _ = fs::remove_file("./hello.txt");
 
-    let mut tx = WritingTransfer::new("./files/hello.txt", server_addr, "hello.txt");
-
     let mut scratch_buf = [0; MAX_PACKET_SIZE];
+
+    let mut tx = WritingTransfer::start("./files/hello.txt", server_addr, "hello.txt");
     while let Some(_) = tx.step(&mut scratch_buf) {}
 
     // Would cause server to have an error if not handled robustly

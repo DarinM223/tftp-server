@@ -203,7 +203,6 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         while Token(self.new_token) == SERVER || Token(self.new_token) == TIMER ||
             self.connections.contains_key(&Token(self.new_token))
         {
-            //self.new_token = self.new_token.wrapping_add(1);
             self.new_token.wrapping_add(1);
         }
         let token = Token(self.new_token);
