@@ -169,34 +169,44 @@ fn wrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
     Ok(())
 }
 
+struct ReadingTransfer {
+    socket: UdpSocket,
+    file: File,
+    block_num: u16,
+    remote: Option<SocketAddr>,
+}
+
 fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
-    let socket = create_socket(Some(Duration::from_secs(TIMEOUT)))?;
+    let mut xfer = ReadingTransfer {
+        socket: create_socket(Some(Duration::from_secs(TIMEOUT)))?,
+        file: File::create("./hello.txt")?,
+        block_num: 1,
+        remote: None,
+    };
+        
     let init_packet = Packet::RRQ {
         filename: "./files/hello.txt".into(),
         mode: "octet".into(),
     };
-    socket.send_to(
+    xfer.socket.send_to(
         init_packet.into_bytes()?.to_slice(),
         server_addr,
     )?;
 
+    let mut reply_buf = [0; MAX_PACKET_SIZE];
     {
-        let mut file = File::create("./hello.txt")?;
-        let mut client_block_num = 1;
-        let mut recv_src;
         loop {
-            let mut reply_buf = [0; MAX_PACKET_SIZE];
-            let (amt, src) = socket.recv_from(&mut reply_buf)?;
-            recv_src = src;
+            let (amt, src) = xfer.socket.recv_from(&mut reply_buf)?;
+            xfer.remote = Some(src);
             let reply_packet = Packet::read(&reply_buf[0..amt])?;
             if let Packet::DATA { block_num, data } = reply_packet {
-                assert_eq!(client_block_num, block_num);
-                file.write_all(&data)?;
+                assert_eq!(xfer.block_num, block_num);
+                xfer.file.write_all(&data)?;
 
-                let ack_packet = Packet::ACK(client_block_num);
-                socket.send_to(ack_packet.into_bytes()?.to_slice(), &src)?;
+                let ack_packet = Packet::ACK(xfer.block_num);
+                xfer.socket.send_to(ack_packet.into_bytes()?.to_slice(), &src)?;
 
-                client_block_num = client_block_num.wrapping_add(1);
+                xfer.block_num = xfer.block_num.wrapping_add(1);
 
                 if data.len() < 512 {
                     break;
@@ -207,7 +217,7 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
         }
 
         // Would cause server to have an error if not handled robustly
-        socket.send_to(&[1, 2, 3], &recv_src)?;
+        xfer.socket.send_to(&[1, 2, 3], &xfer.remote.unwrap())?;
     }
 
     assert_files_identical("./hello.txt", "./files/hello.txt");
