@@ -176,22 +176,31 @@ struct ReadingTransfer {
     remote: Option<SocketAddr>,
 }
 
+impl ReadingTransfer {
+    fn start(local_file: &str, server_addr: &SocketAddr, server_file: &str) -> Self {
+        let xfer = Self {
+            socket: create_socket(Some(Duration::from_secs(TIMEOUT))).unwrap(),
+            file: File::create(local_file).expect(&format!("cannot create {}", local_file)),
+            block_num: 1,
+            remote: None,
+        };
+        let init_packet = Packet::RRQ {
+            filename: server_file.into(),
+            mode: "octet".into(),
+        };
+        xfer.socket
+            .send_to(init_packet.to_bytes().unwrap().to_slice(), &server_addr)
+            .expect(&format!(
+                "cannot send initial packet {:?} to {:?}",
+                init_packet,
+                server_addr
+            ));
+        xfer
+    }
+}
+
 fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
-    let mut xfer = ReadingTransfer {
-        socket: create_socket(Some(Duration::from_secs(TIMEOUT)))?,
-        file: File::create("./hello.txt")?,
-        block_num: 1,
-        remote: None,
-    };
-        
-    let init_packet = Packet::RRQ {
-        filename: "./files/hello.txt".into(),
-        mode: "octet".into(),
-    };
-    xfer.socket.send_to(
-        init_packet.into_bytes()?.to_slice(),
-        server_addr,
-    )?;
+    let mut xfer = ReadingTransfer::start("./hello.txt", server_addr, "./files/hello.txt");
 
     let mut reply_buf = [0; MAX_PACKET_SIZE];
     {
