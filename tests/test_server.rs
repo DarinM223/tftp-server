@@ -197,37 +197,47 @@ impl ReadingTransfer {
             ));
         xfer
     }
+
+    fn step(&mut self, rx_buf: &mut [u8; MAX_PACKET_SIZE]) -> Option<()> {
+        let (amt, src) = self.socket.recv_from(rx_buf).expect("cannot receive");
+        if self.remote.is_some() {
+            assert_eq!(self.remote.unwrap(), src, "transfer source changed");
+        } else {
+            self.remote = Some(src);
+        }
+
+        let received = Packet::read(&rx_buf[0..amt]).unwrap();
+        if let Packet::DATA { block_num, data } = received {
+            assert_eq!(self.block_num, block_num);
+            self.file.write_all(&data).expect(
+                "cannot write to local file",
+            );
+
+            let ack_packet = Packet::ACK(self.block_num);
+            self.socket
+                .send_to(ack_packet.to_bytes().unwrap().to_slice(), &src)
+                .expect(&format!("cannot send packet {:?} to {:?}", ack_packet, src));
+
+            self.block_num = self.block_num.wrapping_add(1);
+
+            if data.len() < 512 {
+                return None;
+            }
+        } else {
+            panic!("Reply packet is not a data packet");
+        }
+        Some(())
+    }
 }
 
 fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
-    let mut xfer = ReadingTransfer::start("./hello.txt", server_addr, "./files/hello.txt");
+    let mut scratch_buf = [0; MAX_PACKET_SIZE];
 
-    let mut reply_buf = [0; MAX_PACKET_SIZE];
-    {
-        loop {
-            let (amt, src) = xfer.socket.recv_from(&mut reply_buf)?;
-            xfer.remote = Some(src);
-            let reply_packet = Packet::read(&reply_buf[0..amt])?;
-            if let Packet::DATA { block_num, data } = reply_packet {
-                assert_eq!(xfer.block_num, block_num);
-                xfer.file.write_all(&data)?;
+    let mut rx = ReadingTransfer::start("./hello.txt", server_addr, "./files/hello.txt");
+    while let Some(_) = rx.step(&mut scratch_buf) {}
 
-                let ack_packet = Packet::ACK(xfer.block_num);
-                xfer.socket.send_to(ack_packet.into_bytes()?.to_slice(), &src)?;
-
-                xfer.block_num = xfer.block_num.wrapping_add(1);
-
-                if data.len() < 512 {
-                    break;
-                }
-            } else {
-                panic!("Reply packet is not a data packet");
-            }
-        }
-
-        // Would cause server to have an error if not handled robustly
-        xfer.socket.send_to(&[1, 2, 3], &xfer.remote.unwrap())?;
-    }
+    // Would cause server to have an error if not handled robustly
+    rx.socket.send_to(&[1, 2, 3], &rx.remote.unwrap())?;
 
     assert_files_identical("./hello.txt", "./files/hello.txt");
     assert!(fs::remove_file("./hello.txt").is_ok());
