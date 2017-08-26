@@ -132,10 +132,10 @@ impl WritingTransfer {
 
         // Read and send data packet
         let mut data = Vec::with_capacity(512);
-        match self.file.read_512(&mut data) {
-            Err(_) | Ok(0) => return None,
-            _ => {}
-        };
+        let res = self.file.read_512(&mut data);
+        if res.expect("error reading from file") == 0 {
+            return None;
+        }
         let data_packet = Packet::DATA {
             block_num: self.block_num,
             data,
