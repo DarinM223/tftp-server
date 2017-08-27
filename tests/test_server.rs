@@ -288,6 +288,26 @@ fn rrq_file_not_found_test(server_addr: &SocketAddr) -> Result<()> {
     Ok(())
 }
 
+fn interleaved_read_read_same_file(server_addr: &SocketAddr) {
+    let mut scratch_buf = [0; MAX_PACKET_SIZE];
+
+    let mut read_a = ReadingTransfer::start("./read_a.txt", server_addr, "./files/hello.txt");
+    let mut read_b = ReadingTransfer::start("./read_b.txt", server_addr, "./files/hello.txt");
+    loop {
+        let res_a = read_a.step(&mut scratch_buf);
+        let res_b = read_b.step(&mut scratch_buf);
+        assert_eq!(res_a, res_b, "reads finished in different number of steps");
+        if res_a == None {
+            break;
+        }
+    }
+
+    assert_files_identical("./read_a.txt", "./files/hello.txt");
+    assert_files_identical("./read_a.txt", "./read_b.txt");
+    assert!(fs::remove_file("./read_a.txt").is_ok());
+    assert!(fs::remove_file("./read_b.txt").is_ok());
+}
+
 fn main() {
     env_logger::init().unwrap();
     let server_addr = start_server().unwrap();
@@ -296,4 +316,5 @@ fn main() {
     timeout_test(&server_addr).unwrap();
     wrq_file_exists_test(&server_addr).unwrap();
     rrq_file_not_found_test(&server_addr).unwrap();
+    interleaved_read_read_same_file(&server_addr);
 }
