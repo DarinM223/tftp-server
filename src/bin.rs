@@ -22,6 +22,9 @@ fn main() {
 
     // TODO: test argument handling
     let matches = App::new("TFTP Server")
+        .about(
+            "A server implementation of the TFTP Protocol (IETF RFC 1350)",
+        )
         .version(crate_version!())
         .arg(
             Arg::with_name(arg_ip)
@@ -34,7 +37,7 @@ fn main() {
         .arg(
             Arg::with_name(arg_dir)
                 .short("d")
-                .long("drectory")
+                .long("directory")
                 .help("specifies the directory to serve (current by default)")
                 .takes_value(true)
                 .value_name("DIRECTORY"),
@@ -44,7 +47,7 @@ fn main() {
                 .short("t")
                 .long("timeout")
                 .help(
-                    "the (natural) number of seconds before an idle transfer is terminated",
+                    "the (non-zero) number of seconds before an idle transfer is terminated",
                 )
                 .takes_value(true)
                 .value_name("SECONDS"),
