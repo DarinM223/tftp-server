@@ -125,7 +125,7 @@ pub type TftpServer = TftpServerImpl<FSAdapter>;
 
 pub struct TftpServerImpl<IO: IOAdapter> {
     /// The ID of a new token used for generating different tokens.
-    new_token: usize,
+    new_token: Token,
     /// The event loop for handling async events.
     poll: Poll,
     /// The main timer that can be used to set multiple timeout events.
@@ -180,7 +180,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         )?;
 
         Ok(Self {
-            new_token: 2,
+            new_token: Token(2),
             poll,
             timer,
             timeout,
@@ -200,12 +200,12 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         {
             panic!("no more tokens, but impressive amount of memory");
         }
-        while Token(self.new_token) == SERVER || Token(self.new_token) == TIMER ||
-            self.connections.contains_key(&Token(self.new_token))
+        while self.new_token == SERVER || self.new_token == TIMER ||
+            self.connections.contains_key(&self.new_token)
         {
-            self.new_token = self.new_token.wrapping_add(1);
+            self.new_token.0 = self.new_token.0.wrapping_add(1);
         }
-        Token(self.new_token)
+        self.new_token
     }
 
     /// Cancels a connection given the connection's token. It cancels the
