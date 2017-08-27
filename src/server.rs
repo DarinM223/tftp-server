@@ -150,7 +150,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     /// Creates a new TFTP server from the provided config
     pub fn with_cfg(cfg: &ServerConfig) -> Result<Self> {
         Self::new_from_socket(
-            make_udp_socket(cfg.addr.0, cfg.addr.1)?,
+            make_bound_socket(cfg.addr.0, cfg.addr.1)?,
             cfg.timeout,
             IOPolicyCfg {
                 readonly: cfg.readonly,
@@ -315,7 +315,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             Ok(packet) => packet,
         };
 
-        let socket = make_udp_socket(self.local_addr()?.ip(), None)?;
+        let socket = make_bound_socket(self.local_addr()?.ip(), None)?;
 
         // send packet back for all cases
         socket.send_to(reply_packet.to_bytes()?.to_slice(), &src)?;
@@ -410,7 +410,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     }
 }
 
-fn make_udp_socket(ip: IpAddr, port: Option<u16>) -> Result<UdpSocket> {
+fn make_bound_socket(ip: IpAddr, port: Option<u16>) -> Result<UdpSocket> {
     let socket = net::UdpSocket::bind((ip, port.unwrap_or(0)))?;
 
     socket.set_nonblocking(true)?;
