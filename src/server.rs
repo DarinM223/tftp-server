@@ -299,14 +299,16 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     fn handle_token(&mut self, token: Token, mut buf: &mut [u8]) -> Result<()> {
         match token {
             TIMER => self.process_timer(),
-            _ if self.server_sockets.contains_key(&token) => self.handle_server_packet(token, &mut buf),
+            _ if self.server_sockets.contains_key(&token) => {
+                self.handle_server_packet(token, &mut buf)
+            }
             _ => self.handle_connection_packet(token, &mut buf),
         }
     }
 
     fn handle_server_packet(&mut self, token: Token, mut buf: &mut [u8]) -> Result<()> {
         let (local_ip, amt, src) = {
-            let socket = match self.server_sockets.get_mut(&token) {
+            let socket = match self.server_sockets.get(&token) {
                 Some(socket) => socket,
                 None => {
                     error!("Invalid server token");
