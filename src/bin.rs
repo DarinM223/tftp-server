@@ -90,7 +90,7 @@ fn main() {
 
     let cfg = ServerConfig {
         readonly: matches.is_present(arg_readonly),
-        addr,
+        addrs: vec![addr],
         dir: match matches.value_of(arg_dir) {
             Some(dir) => {
                 assert!(

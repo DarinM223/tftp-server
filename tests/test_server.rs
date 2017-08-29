@@ -10,7 +10,7 @@ use std::net::{SocketAddr, IpAddr, UdpSocket};
 use std::thread;
 use std::time::Duration;
 use tftp_server::packet::{ErrorCode, Packet, MAX_PACKET_SIZE};
-use tftp_server::server::{Result, TftpServer};
+use tftp_server::server::{Result, TftpServer, ServerConfig};
 
 trait Read512 {
     fn read_512(&mut self, buf: &mut Vec<u8>) -> io::Result<usize>;
@@ -37,9 +37,15 @@ fn create_socket(timeout: Option<Duration>) -> Result<UdpSocket> {
 
 /// Starts the server in a new thread.
 pub fn start_server() -> Result<Vec<SocketAddr>> {
-    let mut server = TftpServer::new()?;
+    let mut cfg: ServerConfig = Default::default();
+    cfg.addrs = vec![
+        (IpAddr::from([127, 0, 0, 1]), None),
+        (IpAddr::from([127, 0, 0, 1]), None),
+    ];
+    let mut server = TftpServer::with_cfg(&cfg)?;
     let mut addrs = vec![];
     server.get_local_addrs(&mut addrs)?;
+    //assert_eq!(addrs.len(), cfg.addrs.len(), "wrong number of addresses");
     thread::spawn(move || {
         if let Err(e) = server.run() {
             println!("Error with server: {:?}", e);

@@ -104,8 +104,8 @@ pub struct ServerConfig {
     pub readonly: bool,
     /// The directory the server will serve from instead of the default
     pub dir: Option<String>,
-    /// The IP address (and optionally port) on which the server should listen
-    pub addr: (IpAddr, Option<u16>),
+    /// The IP addresses (and optionally ports) on which the server must listen
+    pub addrs: Vec<(IpAddr, Option<u16>)>,
     /// The idle time until a connection with a client is closed
     pub timeout: Duration,
 }
@@ -115,7 +115,7 @@ impl Default for ServerConfig {
         ServerConfig {
             readonly: false,
             dir: None,
-            addr: (IpAddr::from([127, 0, 0, 1]), None),
+            addrs: vec![(IpAddr::from([127, 0, 0, 1]), None)],
             timeout: Duration::from_secs(3),
         }
     }
@@ -150,7 +150,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     /// Creates a new TFTP server from the provided config
     pub fn with_cfg(cfg: &ServerConfig) -> Result<Self> {
         Self::new_from_socket(
-            make_bound_socket(cfg.addr.0, cfg.addr.1)?,
+            make_bound_socket(cfg.addrs[0].0, cfg.addrs[0].1)?,
             cfg.timeout,
             IOPolicyCfg {
                 readonly: cfg.readonly,
