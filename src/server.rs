@@ -200,12 +200,12 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         use std::usize;
         if self.connections
             .len()
-            .saturating_add(1 /* server token */)
+            .saturating_add(self.server_sockets.len())
             .saturating_add(1 /* timer token */) == usize::MAX
         {
             panic!("no more tokens, but impressive amount of memory");
         }
-        while self.new_token == SERVER || self.new_token == TIMER ||
+        while self.new_token == TIMER || self.server_sockets.contains_key(&self.new_token) ||
             self.connections.contains_key(&self.new_token)
         {
             self.new_token.0 = self.new_token.0.wrapping_add(1);
