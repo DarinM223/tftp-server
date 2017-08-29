@@ -36,9 +36,10 @@ fn create_socket(timeout: Option<Duration>) -> Result<UdpSocket> {
 }
 
 /// Starts the server in a new thread.
-pub fn start_server() -> Result<SocketAddr> {
+pub fn start_server() -> Result<Vec<SocketAddr>> {
     let mut server = TftpServer::new()?;
-    let addr = server.local_addr()?;
+    let mut addrs = vec![];
+    server.get_local_addrs(&mut addrs)?;
     thread::spawn(move || {
         if let Err(e) = server.run() {
             println!("Error with server: {:?}", e);
@@ -46,7 +47,7 @@ pub fn start_server() -> Result<SocketAddr> {
         ()
     });
 
-    Ok(addr)
+    Ok(addrs)
 }
 
 pub fn assert_files_identical(fa: &str, fb: &str) {
@@ -310,7 +311,7 @@ fn interleaved_read_read_same_file(server_addr: &SocketAddr) {
 
 fn main() {
     env_logger::init().unwrap();
-    let server_addr = start_server().unwrap();
+    let server_addr = start_server().unwrap()[0];
     wrq_whole_file_test(&server_addr).unwrap();
     rrq_whole_file_test(&server_addr).unwrap();
     timeout_test(&server_addr).unwrap();

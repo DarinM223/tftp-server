@@ -408,6 +408,11 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     pub fn local_addr(&self) -> Result<SocketAddr> {
         Ok(self.socket.local_addr()?)
     }
+
+    pub fn get_local_addrs(&self, bag: &mut Vec<SocketAddr>) -> Result<()> {
+        bag.push(self.socket.local_addr()?);
+        Ok(())
+    }
 }
 
 fn make_bound_socket(ip: IpAddr, port: Option<u16>) -> Result<UdpSocket> {
