@@ -10,8 +10,6 @@ use std::result;
 use std::time::Duration;
 use tftp_proto::*;
 
-/// The token used by the server UDP socket.
-const SERVER: Token = Token(1);
 /// The token used by the timer.
 const TIMER: Token = Token(0);
 
@@ -166,20 +164,22 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         )?;
 
         let mut server_sockets = HashMap::new();
+        let mut new_token = Token(1); // skip timer token
         let addr = cfg.addrs[0];
         {
             let socket = make_bound_socket(addr.0, addr.1)?;
             poll.register(
                 &socket,
-                SERVER,
+                new_token,
                 Ready::readable(),
                 PollOpt::edge() | PollOpt::level(),
             )?;
-            server_sockets.insert(SERVER, socket);
+            server_sockets.insert(new_token, socket);
+            new_token.0 += 1;
         }
 
         Ok(Self {
-            new_token: Token(2),
+            new_token,
             poll,
             timer,
             timeout: cfg.timeout,
