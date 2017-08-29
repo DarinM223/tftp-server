@@ -177,6 +177,16 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             new_token.0 += 1;
         }
 
+        info!(
+            "Server listening on {:?}",
+            server_sockets
+                .iter()
+                .map(|(_, socket)| {
+                    format!("{}", socket.local_addr().unwrap())
+                })
+                .collect::<Vec<_>>()
+        );
+
         Ok(Self {
             new_token,
             poll,
