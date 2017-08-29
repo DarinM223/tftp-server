@@ -6,7 +6,7 @@ extern crate log;
 
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::net::{SocketAddr, IpAddr, Ipv4Addr, UdpSocket};
+use std::net::{SocketAddr, IpAddr, UdpSocket};
 use std::thread;
 use std::time::Duration;
 use tftp_server::packet::{ErrorCode, Packet, MAX_PACKET_SIZE};
@@ -28,7 +28,7 @@ where
 const TIMEOUT: u64 = 3;
 
 fn create_socket(timeout: Option<Duration>) -> Result<UdpSocket> {
-    let socket = UdpSocket::bind((IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0))?;
+    let socket = UdpSocket::bind((IpAddr::from([127, 0, 0, 1]), 0))?;
     socket.set_nonblocking(false)?;
     socket.set_read_timeout(timeout)?;
     socket.set_write_timeout(timeout)?;

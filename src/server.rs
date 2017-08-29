@@ -5,7 +5,7 @@ use packet::{ErrorCode, MAX_PACKET_SIZE, Packet, PacketErr};
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::net::{self, SocketAddr, IpAddr, Ipv4Addr};
+use std::net::{self, SocketAddr, IpAddr};
 use std::result;
 use std::time::Duration;
 use tftp_proto::*;
@@ -115,7 +115,7 @@ impl Default for ServerConfig {
         ServerConfig {
             readonly: false,
             dir: None,
-            addr: (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), None),
+            addr: (IpAddr::from([127, 0, 0, 1]), None),
             timeout: Duration::from_secs(3),
         }
     }
