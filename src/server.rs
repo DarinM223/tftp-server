@@ -11,9 +11,9 @@ use std::time::Duration;
 use tftp_proto::*;
 
 /// The token used by the server UDP socket.
-const SERVER: Token = Token(0);
+const SERVER: Token = Token(1);
 /// The token used by the timer.
-const TIMER: Token = Token(1);
+const TIMER: Token = Token(0);
 
 #[derive(Debug)]
 pub enum TftpError {
