@@ -113,7 +113,10 @@ impl Default for ServerConfig {
         ServerConfig {
             readonly: false,
             dir: None,
-            addrs: vec![(IpAddr::from([127, 0, 0, 1]), None)],
+            addrs: vec![
+                (IpAddr::from([127, 0, 0, 1]), None),
+                (IpAddr::from([0; 16]), None),
+            ],
             timeout: Duration::from_secs(3),
         }
     }
