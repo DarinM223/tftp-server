@@ -165,8 +165,8 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 
         let mut server_sockets = HashMap::new();
         let mut new_token = Token(1); // skip timer token
-        for addr in &cfg.addrs {
-            let socket = make_bound_socket(addr.0, addr.1)?;
+        for &(ip, port) in &cfg.addrs {
+            let socket = make_bound_socket(ip, port)?;
             poll.register(
                 &socket,
                 new_token,
@@ -181,9 +181,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             "Server listening on {:?}",
             server_sockets
                 .iter()
-                .map(|(_, socket)| {
-                    format!("{}", socket.local_addr().unwrap())
-                })
+                .map(|(_, socket)| format!("{}", socket.local_addr().unwrap()))
                 .collect::<Vec<_>>()
         );
 
