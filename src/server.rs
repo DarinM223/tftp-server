@@ -147,7 +147,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 
     /// Creates a new TFTP server from the provided config
     pub fn with_cfg(cfg: &ServerConfig) -> Result<Self> {
-        if cfg.addrs.len() == 0 {
+        if cfg.addrs.is_empty() {
             return Err(TftpError::IoError(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "address list empty; nothing to listen on",
@@ -423,7 +423,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 
     /// Stores the local addresses in the provided vec
     pub fn get_local_addrs(&self, bag: &mut Vec<SocketAddr>) -> Result<()> {
-        for (_, ref socket) in self.server_sockets.iter() {
+        for socket in self.server_sockets.values() {
             bag.push(socket.local_addr()?);
         }
         Ok(())
