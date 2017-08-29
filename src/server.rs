@@ -134,7 +134,7 @@ pub struct TftpServerImpl<IO: IOAdapter> {
     timeout: Duration,
     /// The main server socket that receives RRQ and WRQ packets
     /// and creates a new separate UDP connection.
-    socket: UdpSocket,
+    server_sockets: HashMap<Token, UdpSocket>,
     /// The separate UDP connections for handling multiple requests.
     connections: HashMap<Token, ConnectionState<IO>>,
     /// The TFTP protocol state machine and filesystem accessor
@@ -173,12 +173,15 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             PollOpt::edge() | PollOpt::level(),
         )?;
 
+        let mut server_sockets = HashMap::new();
+        server_sockets.insert(SERVER, socket);
+
         Ok(Self {
             new_token: Token(2),
             poll,
             timer,
             timeout: cfg.timeout,
-            socket,
+            server_sockets,
             connections: HashMap::new(),
             proto_handler: TftpServerProto::new(
                 Default::default(),
@@ -296,13 +299,23 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     fn handle_token(&mut self, token: Token, mut buf: &mut [u8]) -> Result<()> {
         match token {
             TIMER => self.process_timer(),
-            SERVER => self.handle_server_packet(&mut buf),
+            _ if self.server_sockets.contains_key(&token) => self.handle_server_packet(token, &mut buf),
             _ => self.handle_connection_packet(token, &mut buf),
         }
     }
 
-    fn handle_server_packet(&mut self, mut buf: &mut [u8]) -> Result<()> {
-        let (amt, src) = self.socket.recv_from(&mut buf)?;
+    fn handle_server_packet(&mut self, token: Token, mut buf: &mut [u8]) -> Result<()> {
+        let (local_ip, amt, src) = {
+            let socket = match self.server_sockets.get_mut(&token) {
+                Some(socket) => socket,
+                None => {
+                    error!("Invalid server token");
+                    return Ok(());
+                }
+            };
+            let (amt, src) = socket.recv_from(&mut buf)?;
+            (socket.local_addr()?.ip(), amt, src)
+        };
         let packet = Packet::read(&buf[..amt])?;
 
         let new_conn_token = self.generate_token();
@@ -315,7 +328,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             Ok(packet) => packet,
         };
 
-        let socket = make_bound_socket(self.local_addr()?.ip(), None)?;
+        let socket = make_bound_socket(local_ip, None)?;
 
         // send packet back for all cases
         socket.send_to(reply_packet.to_bytes()?.to_slice(), &src)?;
@@ -404,13 +417,11 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         }
     }
 
-    /// Returns the socket address of the server socket.
-    pub fn local_addr(&self) -> Result<SocketAddr> {
-        Ok(self.socket.local_addr()?)
-    }
-
+    /// Stores the local addresses in the provided vec
     pub fn get_local_addrs(&self, bag: &mut Vec<SocketAddr>) -> Result<()> {
-        bag.push(self.socket.local_addr()?);
+        for (_, ref socket) in self.server_sockets.iter() {
+            bag.push(socket.local_addr()?);
+        }
         Ok(())
     }
 }

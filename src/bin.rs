@@ -106,10 +106,6 @@ fn main() {
     };
 
     let mut server = TftpServer::with_cfg(&cfg).expect("Error creating server");
-    println!(
-        "Server created at address: {:?}",
-        server.local_addr().unwrap()
-    );
 
     match server.run() {
         Ok(_) => println!("Server completed successfully!"),
