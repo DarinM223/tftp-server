@@ -38,6 +38,12 @@ fn create_socket(timeout: Option<Duration>) -> Result<UdpSocket> {
 /// Starts the server in a new thread.
 pub fn start_server() -> Result<Vec<SocketAddr>> {
     let mut cfg: ServerConfig = Default::default();
+    cfg.addrs = vec![];
+    assert!(
+        TftpServer::with_cfg(&cfg).is_err(),
+        "server creation succeeded without addresses"
+    );
+
     cfg.addrs = vec![
         (IpAddr::from([127, 0, 0, 1]), None),
         (IpAddr::from([127, 0, 0, 1]), None),

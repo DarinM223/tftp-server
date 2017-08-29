@@ -149,6 +149,13 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 
     /// Creates a new TFTP server from the provided config
     pub fn with_cfg(cfg: &ServerConfig) -> Result<Self> {
+        if cfg.addrs.len() == 0 {
+            return Err(TftpError::IoError(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "address list empty; nothing to listen on",
+            )));
+        }
+
         let socket = make_bound_socket(cfg.addrs[0].0, cfg.addrs[0].1)?;
 
         let poll = Poll::new()?;
