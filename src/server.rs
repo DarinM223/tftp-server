@@ -165,16 +165,18 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             PollOpt::edge() | PollOpt::level(),
         )?;
 
-        let socket = make_bound_socket(cfg.addrs[0].0, cfg.addrs[0].1)?;
-        poll.register(
-            &socket,
-            SERVER,
-            Ready::readable(),
-            PollOpt::edge() | PollOpt::level(),
-        )?;
-
         let mut server_sockets = HashMap::new();
-        server_sockets.insert(SERVER, socket);
+        let addr = cfg.addrs[0];
+        {
+            let socket = make_bound_socket(addr.0, addr.1)?;
+            poll.register(
+                &socket,
+                SERVER,
+                Ready::readable(),
+                PollOpt::edge() | PollOpt::level(),
+            )?;
+            server_sockets.insert(SERVER, socket);
+        }
 
         Ok(Self {
             new_token: Token(2),
