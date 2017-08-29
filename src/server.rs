@@ -149,21 +149,8 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 
     /// Creates a new TFTP server from the provided config
     pub fn with_cfg(cfg: &ServerConfig) -> Result<Self> {
-        Self::new_from_socket(
-            make_bound_socket(cfg.addrs[0].0, cfg.addrs[0].1)?,
-            cfg.timeout,
-            IOPolicyCfg {
-                readonly: cfg.readonly,
-                path: cfg.dir.clone(),
-            },
-        )
-    }
+        let socket = make_bound_socket(cfg.addrs[0].0, cfg.addrs[0].1)?;
 
-    fn new_from_socket(
-        socket: UdpSocket,
-        timeout: Duration,
-        io_policy: IOPolicyCfg,
-    ) -> Result<Self> {
         let poll = Poll::new()?;
         let timer = Timer::default();
         poll.register(
@@ -183,10 +170,16 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             new_token: Token(2),
             poll,
             timer,
-            timeout,
+            timeout: cfg.timeout,
             socket,
             connections: HashMap::new(),
-            proto_handler: TftpServerProto::new(Default::default(), io_policy),
+            proto_handler: TftpServerProto::new(
+                Default::default(),
+                IOPolicyCfg {
+                    readonly: cfg.readonly,
+                    path: cfg.dir.clone(),
+                },
+            ),
         })
     }
 
