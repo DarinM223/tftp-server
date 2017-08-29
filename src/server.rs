@@ -156,19 +156,19 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             )));
         }
 
-        let socket = make_bound_socket(cfg.addrs[0].0, cfg.addrs[0].1)?;
-
         let poll = Poll::new()?;
         let timer = Timer::default();
         poll.register(
-            &socket,
-            SERVER,
+            &timer,
+            TIMER,
             Ready::readable(),
             PollOpt::edge() | PollOpt::level(),
         )?;
+
+        let socket = make_bound_socket(cfg.addrs[0].0, cfg.addrs[0].1)?;
         poll.register(
-            &timer,
-            TIMER,
+            &socket,
+            SERVER,
             Ready::readable(),
             PollOpt::edge() | PollOpt::level(),
         )?;
