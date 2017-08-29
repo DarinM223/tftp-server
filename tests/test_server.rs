@@ -311,9 +311,12 @@ fn interleaved_read_read_same_file(server_addr: &SocketAddr) {
 
 fn main() {
     env_logger::init().unwrap();
-    let server_addr = start_server().unwrap()[0];
-    wrq_whole_file_test(&server_addr).unwrap();
-    rrq_whole_file_test(&server_addr).unwrap();
+    let addrs = start_server().unwrap();
+    for addr in &addrs {
+        wrq_whole_file_test(addr).unwrap();
+        rrq_whole_file_test(addr).unwrap();
+    }
+    let server_addr = addrs[0];
     timeout_test(&server_addr).unwrap();
     wrq_file_exists_test(&server_addr).unwrap();
     rrq_file_not_found_test(&server_addr).unwrap();
