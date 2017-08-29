@@ -30,8 +30,9 @@ fn main() {
             Arg::with_name(arg_ip)
                 .short("a")
                 .long("address")
-                .help("specifies the address[:port] to listen on")
+                .help("specifies an address[:port] to listen on")
                 .takes_value(true)
+                .multiple(true)
                 .value_name("IPAddr[:PORT]"),
         )
         .arg(
@@ -60,9 +61,8 @@ fn main() {
         )
         .get_matches();
 
-    let addr = match matches.value_of(arg_ip) {
-        None => (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), None),
-        Some(s) => {
+    let addrs = matches.values_of(arg_ip).map(|ips| {
+        ips.map(|s| {
             // try parsing in order: first ip:port, then just ip
             if let Ok(sk) = SocketAddr::from_str(s) {
                 (sk.ip(), Some(sk.port()))
@@ -71,6 +71,16 @@ fn main() {
             } else {
                 panic!("error parsing argument \"{}\" as ip address", s);
             }
+        }).collect()
+    });
+
+    let addrs = match addrs {
+        Some(list) => list,
+        None => {
+            vec![
+                (IpAddr::from([127, 0, 0, 1]), None),
+                (IpAddr::from([0; 16]), None),
+            ]
         }
     };
 
@@ -90,23 +100,19 @@ fn main() {
 
     let cfg = ServerConfig {
         readonly: matches.is_present(arg_readonly),
-        addr,
+        addrs,
         dir: matches.value_of(arg_dir).map(|dir| {
-                assert!(
-                    Path::new(dir).exists(),
-                    "specified path \"{}\" does not exist",
-                    dir
-                );
-                dir.into()
-            }),
+            assert!(
+                Path::new(dir).exists(),
+                "specified path \"{}\" does not exist",
+                dir
+            );
+            dir.into()
+        }),
         timeout,
     };
 
     let mut server = TftpServer::with_cfg(&cfg).expect("Error creating server");
-    println!(
-        "Server created at address: {:?}",
-        server.local_addr().unwrap()
-    );
 
     match server.run() {
         Ok(_) => println!("Server completed successfully!"),

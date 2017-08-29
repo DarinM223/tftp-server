@@ -5,15 +5,13 @@ use packet::{ErrorCode, MAX_PACKET_SIZE, Packet, PacketErr};
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::net::{self, SocketAddr, IpAddr, Ipv4Addr};
+use std::net::{self, SocketAddr, IpAddr};
 use std::result;
 use std::time::Duration;
 use tftp_proto::*;
 
-/// The token used by the server UDP socket.
-const SERVER: Token = Token(0);
 /// The token used by the timer.
-const TIMER: Token = Token(1);
+const TIMER: Token = Token(0);
 
 #[derive(Debug)]
 pub enum TftpError {
@@ -104,8 +102,8 @@ pub struct ServerConfig {
     pub readonly: bool,
     /// The directory the server will serve from instead of the default
     pub dir: Option<String>,
-    /// The IP address (and optionally port) on which the server should listen
-    pub addr: (IpAddr, Option<u16>),
+    /// The IP addresses (and optionally ports) on which the server must listen
+    pub addrs: Vec<(IpAddr, Option<u16>)>,
     /// The idle time until a connection with a client is closed
     pub timeout: Duration,
 }
@@ -115,7 +113,10 @@ impl Default for ServerConfig {
         ServerConfig {
             readonly: false,
             dir: None,
-            addr: (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), None),
+            addrs: vec![
+                (IpAddr::from([127, 0, 0, 1]), None),
+                (IpAddr::from([0; 16]), None),
+            ],
             timeout: Duration::from_secs(3),
         }
     }
@@ -134,7 +135,7 @@ pub struct TftpServerImpl<IO: IOAdapter> {
     timeout: Duration,
     /// The main server socket that receives RRQ and WRQ packets
     /// and creates a new separate UDP connection.
-    socket: UdpSocket,
+    server_sockets: HashMap<Token, UdpSocket>,
     /// The separate UDP connections for handling multiple requests.
     connections: HashMap<Token, ConnectionState<IO>>,
     /// The TFTP protocol state machine and filesystem accessor
@@ -149,29 +150,15 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
 
     /// Creates a new TFTP server from the provided config
     pub fn with_cfg(cfg: &ServerConfig) -> Result<Self> {
-        Self::new_from_socket(
-            make_bound_socket(cfg.addr.0, cfg.addr.1)?,
-            cfg.timeout,
-            IOPolicyCfg {
-                readonly: cfg.readonly,
-                path: cfg.dir.clone(),
-            },
-        )
-    }
+        if cfg.addrs.is_empty() {
+            return Err(TftpError::IoError(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "address list empty; nothing to listen on",
+            )));
+        }
 
-    fn new_from_socket(
-        socket: UdpSocket,
-        timeout: Duration,
-        io_policy: IOPolicyCfg,
-    ) -> Result<Self> {
         let poll = Poll::new()?;
         let timer = Timer::default();
-        poll.register(
-            &socket,
-            SERVER,
-            Ready::readable(),
-            PollOpt::edge() | PollOpt::level(),
-        )?;
         poll.register(
             &timer,
             TIMER,
@@ -179,14 +166,42 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             PollOpt::edge() | PollOpt::level(),
         )?;
 
+        let mut server_sockets = HashMap::new();
+        let mut new_token = Token(1); // skip timer token
+        for &(ip, port) in &cfg.addrs {
+            let socket = make_bound_socket(ip, port)?;
+            poll.register(
+                &socket,
+                new_token,
+                Ready::readable(),
+                PollOpt::edge() | PollOpt::level(),
+            )?;
+            server_sockets.insert(new_token, socket);
+            new_token.0 += 1;
+        }
+
+        info!(
+            "Server listening on {:?}",
+            server_sockets
+                .iter()
+                .map(|(_, socket)| format!("{}", socket.local_addr().unwrap()))
+                .collect::<Vec<_>>()
+        );
+
         Ok(Self {
-            new_token: Token(2),
+            new_token,
             poll,
             timer,
-            timeout,
-            socket,
+            timeout: cfg.timeout,
+            server_sockets,
             connections: HashMap::new(),
-            proto_handler: TftpServerProto::new(Default::default(), io_policy),
+            proto_handler: TftpServerProto::new(
+                Default::default(),
+                IOPolicyCfg {
+                    readonly: cfg.readonly,
+                    path: cfg.dir.clone(),
+                },
+            ),
         })
     }
 
@@ -195,12 +210,12 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         use std::usize;
         if self.connections
             .len()
-            .saturating_add(1 /* server token */)
+            .saturating_add(self.server_sockets.len())
             .saturating_add(1 /* timer token */) == usize::MAX
         {
             panic!("no more tokens, but impressive amount of memory");
         }
-        while self.new_token == SERVER || self.new_token == TIMER ||
+        while self.new_token == TIMER || self.server_sockets.contains_key(&self.new_token) ||
             self.connections.contains_key(&self.new_token)
         {
             self.new_token.0 = self.new_token.0.wrapping_add(1);
@@ -296,13 +311,25 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
     fn handle_token(&mut self, token: Token, mut buf: &mut [u8]) -> Result<()> {
         match token {
             TIMER => self.process_timer(),
-            SERVER => self.handle_server_packet(&mut buf),
+            _ if self.server_sockets.contains_key(&token) => {
+                self.handle_server_packet(token, &mut buf)
+            }
             _ => self.handle_connection_packet(token, &mut buf),
         }
     }
 
-    fn handle_server_packet(&mut self, mut buf: &mut [u8]) -> Result<()> {
-        let (amt, src) = self.socket.recv_from(&mut buf)?;
+    fn handle_server_packet(&mut self, token: Token, mut buf: &mut [u8]) -> Result<()> {
+        let (local_ip, amt, src) = {
+            let socket = match self.server_sockets.get(&token) {
+                Some(socket) => socket,
+                None => {
+                    error!("Invalid server token");
+                    return Ok(());
+                }
+            };
+            let (amt, src) = socket.recv_from(&mut buf)?;
+            (socket.local_addr()?.ip(), amt, src)
+        };
         let packet = Packet::read(&buf[..amt])?;
 
         let new_conn_token = self.generate_token();
@@ -315,7 +342,7 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
             Ok(packet) => packet,
         };
 
-        let socket = make_bound_socket(self.local_addr()?.ip(), None)?;
+        let socket = make_bound_socket(local_ip, None)?;
 
         // send packet back for all cases
         socket.send_to(reply_packet.to_bytes()?.to_slice(), &src)?;
@@ -404,9 +431,12 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         }
     }
 
-    /// Returns the socket address of the server socket.
-    pub fn local_addr(&self) -> Result<SocketAddr> {
-        Ok(self.socket.local_addr()?)
+    /// Stores the local addresses in the provided vec
+    pub fn get_local_addrs(&self, bag: &mut Vec<SocketAddr>) -> Result<()> {
+        for socket in self.server_sockets.values() {
+            bag.push(socket.local_addr()?);
+        }
+        Ok(())
     }
 }
 

@@ -42,7 +42,7 @@ Features
 All features are implemented in the library. The binary target is a only an argument-parsing thin wrapper over it for direct usage conveninence.
 
 Available features:
-* `-a` or `--address` to specify the address[:port] to listen on
+* `-a` or `--address` to specify an address[:port] to listen on (multiple supported)
 * `-r` will make the server treat the served directory as read-only (it will reject all write requests)
 * `-d` or `--directory` specifies the direcotry to serve from (the given path will be prepended to all requested paths)
 * `-t` or `--timeout` specifies the timeout (in seconds) for idle connections
@@ -74,6 +74,6 @@ Feature TODOs
 * [x] serve from specified directory, not just the current one
 * [x] treat directory as readonly (reject write requests)
 * [x] IPv6 support
-* [ ] multiple address support
+* [x] multiple address support
 * [ ] CLI switches for logging
 * [ ] running control (ability to stop server hard or soft)

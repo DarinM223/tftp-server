@@ -6,11 +6,11 @@ extern crate log;
 
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::net::{SocketAddr, IpAddr, Ipv4Addr, UdpSocket};
+use std::net::{SocketAddr, IpAddr, UdpSocket};
 use std::thread;
 use std::time::Duration;
 use tftp_server::packet::{ErrorCode, Packet, MAX_PACKET_SIZE};
-use tftp_server::server::{Result, TftpServer};
+use tftp_server::server::{Result, TftpServer, ServerConfig};
 
 trait Read512 {
     fn read_512(&mut self, buf: &mut Vec<u8>) -> io::Result<usize>;
@@ -28,7 +28,7 @@ where
 const TIMEOUT: u64 = 3;
 
 fn create_socket(timeout: Option<Duration>) -> Result<UdpSocket> {
-    let socket = UdpSocket::bind((IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0))?;
+    let socket = UdpSocket::bind((IpAddr::from([127, 0, 0, 1]), 0))?;
     socket.set_nonblocking(false)?;
     socket.set_read_timeout(timeout)?;
     socket.set_write_timeout(timeout)?;
@@ -36,9 +36,22 @@ fn create_socket(timeout: Option<Duration>) -> Result<UdpSocket> {
 }
 
 /// Starts the server in a new thread.
-pub fn start_server() -> Result<SocketAddr> {
-    let mut server = TftpServer::new()?;
-    let addr = server.local_addr()?;
+pub fn start_server() -> Result<Vec<SocketAddr>> {
+    let mut cfg: ServerConfig = Default::default();
+    cfg.addrs = vec![];
+    assert!(
+        TftpServer::with_cfg(&cfg).is_err(),
+        "server creation succeeded without addresses"
+    );
+
+    cfg.addrs = vec![
+        (IpAddr::from([127, 0, 0, 1]), None),
+        (IpAddr::from([127, 0, 0, 1]), None),
+    ];
+    let mut server = TftpServer::with_cfg(&cfg)?;
+    let mut addrs = vec![];
+    server.get_local_addrs(&mut addrs)?;
+    assert_eq!(addrs.len(), cfg.addrs.len(), "wrong number of addresses");
     thread::spawn(move || {
         if let Err(e) = server.run() {
             println!("Error with server: {:?}", e);
@@ -46,7 +59,7 @@ pub fn start_server() -> Result<SocketAddr> {
         ()
     });
 
-    Ok(addr)
+    Ok(addrs)
 }
 
 pub fn assert_files_identical(fa: &str, fb: &str) {
@@ -310,9 +323,12 @@ fn interleaved_read_read_same_file(server_addr: &SocketAddr) {
 
 fn main() {
     env_logger::init().unwrap();
-    let server_addr = start_server().unwrap();
-    wrq_whole_file_test(&server_addr).unwrap();
-    rrq_whole_file_test(&server_addr).unwrap();
+    let addrs = start_server().unwrap();
+    for addr in &addrs {
+        wrq_whole_file_test(addr).unwrap();
+        rrq_whole_file_test(addr).unwrap();
+    }
+    let server_addr = addrs[0];
     timeout_test(&server_addr).unwrap();
     wrq_file_exists_test(&server_addr).unwrap();
     rrq_file_not_found_test(&server_addr).unwrap();
