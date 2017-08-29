@@ -78,7 +78,7 @@ fn main() {
         matches
             .value_of(arg_timeout)
             .map(|s| {
-                u64::from_str(s).expect(&format!("error parsing {} as timeout", s))
+                u64::from_str(s).expect(&format!("error parsing \"{}\" as timeout", s))
             })
             .map(|n| if n == 0 {
                 panic!("timeout may not be 0 seconds")
@@ -91,17 +91,14 @@ fn main() {
     let cfg = ServerConfig {
         readonly: matches.is_present(arg_readonly),
         addr,
-        dir: match matches.value_of(arg_dir) {
-            Some(dir) => {
+        dir: matches.value_of(arg_dir).map(|dir| {
                 assert!(
                     Path::new(dir).exists(),
-                    "specified path {} does not exist",
+                    "specified path \"{}\" does not exist",
                     dir
                 );
-                Some(dir.into())
-            }
-            _ => None,
-        },
+                dir.into()
+            }),
         timeout,
     };
 
