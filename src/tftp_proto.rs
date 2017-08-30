@@ -1,5 +1,4 @@
 use std::io::{self, Read, Write};
-use std::borrow::BorrowMut;
 use packet::{ErrorCode, Packet};
 use read_512::*;
 
@@ -101,7 +100,7 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
 
         if let Ok(mut xfer) = Transfer::new_read(&mut self.io_proxy, filename) {
             let mut v = vec![];
-            xfer.fread.borrow_mut().read_512(&mut v).unwrap();
+            xfer.fread.read_512(&mut v).unwrap();
             xfer.sent_final = v.len() < 512;
             (
                 Some(Transfer::Tx(xfer)),
@@ -243,7 +242,7 @@ impl<R: Read> TransferTx<R> {
             TftpResult::Done(None)
         } else {
             let mut v = vec![];
-            self.fread.borrow_mut().read_512(&mut v).unwrap();
+            self.fread.read_512(&mut v).unwrap();
             self.sent_final = v.len() < 512;
             self.expected_block_num = self.expected_block_num.wrapping_add(1);
             TftpResult::Reply(Packet::DATA {
@@ -265,7 +264,7 @@ impl<W: Write> TransferRx<W> {
                 msg: "Data packet lost".to_owned(),
             }))
         } else {
-            self.fwrite.borrow_mut().write_all(data.as_slice()).unwrap();
+            self.fwrite.write_all(data.as_slice()).unwrap();
             self.expected_block_num = block_num.wrapping_add(1);
             if data.len() < 512 {
                 self.complete = true;

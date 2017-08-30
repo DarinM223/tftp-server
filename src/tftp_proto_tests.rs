@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Write};
 use std::iter::Take;
@@ -706,7 +705,7 @@ impl ByteGen {
         ByteGen { crt: v, count: 0 }
     }
     fn gen(&mut self, n: usize) -> Vec<u8> {
-        self.borrow_mut().take(n).collect()
+        self.take(n).collect()
     }
 }
 impl Iterator for ByteGen {
