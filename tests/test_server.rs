@@ -9,21 +9,9 @@ use std::io::{self, Read, Write};
 use std::net::{SocketAddr, IpAddr, UdpSocket};
 use std::thread;
 use std::time::Duration;
+use std::borrow::BorrowMut;
 use tftp_server::packet::{ErrorCode, Packet, MAX_PACKET_SIZE};
 use tftp_server::server::{Result, TftpServer, ServerConfig};
-
-trait Read512 {
-    fn read_512(&mut self, buf: &mut Vec<u8>) -> io::Result<usize>;
-}
-
-impl<T> Read512 for T
-where
-    T: Read,
-{
-    fn read_512(&mut self, mut buf: &mut Vec<u8>) -> io::Result<usize> {
-        self.take(512).read_to_end(&mut buf)
-    }
-}
 
 const TIMEOUT: u64 = 3;
 
@@ -145,7 +133,7 @@ impl WritingTransfer {
 
         // Read and send data packet
         let mut data = Vec::with_capacity(512);
-        let res = self.file.read_512(&mut data);
+        let res = self.file.borrow_mut().take(512).read_to_end(&mut data);
         if res.expect("error reading from file") == 0 {
             return None;
         }
