@@ -5,7 +5,7 @@ extern crate tftp_server;
 extern crate log;
 
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{Read, Write};
 use std::net::{SocketAddr, IpAddr, UdpSocket};
 use std::thread;
 use std::time::Duration;

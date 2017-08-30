@@ -4,7 +4,7 @@ use mio::net::UdpSocket;
 use packet::{ErrorCode, MAX_PACKET_SIZE, Packet, PacketErr};
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io;
 use std::net::{self, SocketAddr, IpAddr};
 use std::result;
 use std::time::Duration;
@@ -43,17 +43,6 @@ impl From<TimerError> for TftpError {
 }
 
 pub type Result<T> = result::Result<T, TftpError>;
-
-/// Trait used to inject filesystem IO handling into a server.
-/// A trivial default implementation is provided by `FSAdapter`.
-/// If you want to employ things like buffered IO, it can be done by providing
-/// an implementation for this trait and passing the implementing type to the server.
-pub trait IOAdapter {
-    type R: Read + Sized;
-    type W: Write + Sized;
-    fn open_read(&self, filename: &str) -> io::Result<Self::R>;
-    fn create_new(&mut self, filename: &str) -> io::Result<Self::W>;
-}
 
 /// Provides a simple, default implementation for `IOAdapter`.
 pub struct FSAdapter;

@@ -1,7 +1,6 @@
 use std::io::{self, Read, Write};
 use std::borrow::BorrowMut;
 use packet::{ErrorCode, Packet};
-use server::IOAdapter;
 use read_512::*;
 
 #[derive(Debug, PartialEq)]
@@ -28,6 +27,17 @@ pub enum TftpError {
 
     /// The received packet type cannot be used to initiate a transfer
     NotIniatingPacket,
+}
+
+/// Trait used to inject filesystem IO handling into a server.
+/// A trivial default implementation is provided by `FSAdapter`.
+/// If you want to employ things like buffered IO, it can be done by providing
+/// an implementation for this trait and passing the implementing type to the server.
+pub trait IOAdapter {
+    type R: Read + Sized;
+    type W: Write + Sized;
+    fn open_read(&self, filename: &str) -> io::Result<Self::R>;
+    fn create_new(&mut self, filename: &str) -> io::Result<Self::W>;
 }
 
 /// The TFTP protocol and filesystem usage implementation,

@@ -5,7 +5,6 @@ use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Write};
 use std::iter::Take;
 use packet::{ErrorCode, Packet};
-use server::IOAdapter;
 use tftp_proto::*;
 
 #[test]
