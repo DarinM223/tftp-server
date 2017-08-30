@@ -328,4 +328,49 @@ mod tests {
         "world!",
         13
     );
+
+    macro_rules! packet_enc_dec_test {
+        ($name:ident, $packet:expr) => {
+            #[test]
+            fn $name() {
+                let bytes = $packet.clone().into_bytes();
+                assert!(bytes.is_ok());
+                let packet = bytes.and_then(|pd| Packet::read(pd.to_slice()));
+                assert!(packet.is_ok());
+                let _ = packet.map(|packet| { assert_eq!(packet, $packet); });
+            }
+        };
+    }
+
+    const BYTE_DATA: [u8; 512] = [123; 512];
+
+    packet_enc_dec_test!(
+        rrq,
+        Packet::RRQ {
+            filename: "/a/b/c/hello.txt".to_string(),
+            mode: "netascii".to_string(),
+        }
+    );
+    packet_enc_dec_test!(
+        wrq,
+        Packet::WRQ {
+            filename: "./world.txt".to_string(),
+            mode: "octet".to_string(),
+        }
+    );
+    packet_enc_dec_test!(ack, Packet::ACK(1234));
+    packet_enc_dec_test!(
+        data,
+        Packet::DATA {
+            block_num: 1234,
+            data: Vec::from(&BYTE_DATA[..]),
+        }
+    );
+    packet_enc_dec_test!(
+        err,
+        Packet::ERROR {
+            code: ErrorCode::NoUser,
+            msg: "This is a message".to_string(),
+        }
+    );
 }
