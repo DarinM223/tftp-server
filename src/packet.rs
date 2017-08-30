@@ -284,7 +284,10 @@ fn error_packet_bytes(code: ErrorCode, msg: &str) -> Result<PacketData> {
     Ok(PacketData(buf))
 }
 
-macro_rules! read_string {
+#[cfg(test)]
+mod tests {
+    use super::*;
+    macro_rules! test_read_string {
     ($name:ident, $bytes:expr, $start_pos:expr, $string:expr, $end_pos:expr) => {
         #[test]
         fn $name() {
@@ -302,26 +305,27 @@ macro_rules! read_string {
             });
         }
     };
-}
+    }
 
-read_string!(
-    test_read_string_normal,
-    "hello world!\0",
-    0,
-    "hello world!",
-    13
-);
-read_string!(
-    test_read_string_zero_in_mid,
-    "hello wor\0ld!",
-    0,
-    "hello wor",
-    10
-);
-read_string!(
-    test_read_string_diff_start_pos,
-    "hello world!\0",
-    6,
-    "world!",
-    13
-);
+    test_read_string!(
+        test_read_string_normal,
+        "hello world!\0",
+        0,
+        "hello world!",
+        13
+    );
+    test_read_string!(
+        test_read_string_zero_in_mid,
+        "hello wor\0ld!",
+        0,
+        "hello wor",
+        10
+    );
+    test_read_string!(
+        test_read_string_diff_start_pos,
+        "hello world!\0",
+        6,
+        "world!",
+        13
+    );
+}
