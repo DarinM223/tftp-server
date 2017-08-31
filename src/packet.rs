@@ -91,13 +91,15 @@ impl ErrorCode {
              ErrorCode::NoUser => "No such user.",
          }).to_string()
     }
+}
 
+impl From<ErrorCode> for Packet {
     /// Returns the ERROR packet with the error code and
     /// the default description as the error message.
-    pub fn to_packet(&self) -> Packet {
-        let msg = self.to_string();
+    fn from(err: ErrorCode) -> Packet {
+        let msg = err.to_string();
         Packet::ERROR {
-            code: *self,
+            code: err,
             msg: msg,
         }
     }
