@@ -138,17 +138,6 @@ impl Packet {
         }
     }
 
-    /// Returns the packet's operation code.
-    pub fn op_code(&self) -> OpCode {
-        match *self {
-            Packet::RRQ { .. } => OpCode::RRQ,
-            Packet::WRQ { .. } => OpCode::WRQ,
-            Packet::DATA { .. } => OpCode::DATA,
-            Packet::ACK(_) => OpCode::ACK,
-            Packet::ERROR { .. } => OpCode::ERROR,
-        }
-    }
-
     /// Consumes the packet and returns the packet in byte representation.
     pub fn into_bytes(self) -> Result<PacketData> {
         self.to_bytes()
