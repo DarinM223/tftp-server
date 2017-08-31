@@ -5,7 +5,6 @@ use read_512::Read512;
 
 #[derive(Debug)]
 pub enum PacketErr {
-    InvalidOpCode,
     StrOutOfBounds,
     OpCodeOutOfBounds,
     ErrCodeOutOfBounds,
@@ -131,7 +130,8 @@ impl Packet {
     pub fn read(mut bytes: &[u8]) -> Result<Packet> {
         let opcode = OpCode::from_u16(bytes.read_u16::<BigEndian>()?)?;
         match opcode {
-            OpCode::RRQ | OpCode::WRQ => read_rw_packet(opcode, bytes),
+            OpCode::RRQ => read_rrq_packet(bytes),
+            OpCode::WRQ => read_wrq_packet(bytes),
             OpCode::DATA => read_data_packet(bytes),
             OpCode::ACK => read_ack_packet(bytes),
             OpCode::ERROR => read_error_packet(bytes),
@@ -194,25 +194,24 @@ fn read_string(bytes: &[u8]) -> Result<(String, &[u8])> {
     Ok((result_str, tail))
 }
 
-fn read_rw_packet(code: OpCode, bytes: &[u8]) -> Result<Packet> {
+fn read_rrq_packet(bytes: &[u8]) -> Result<Packet> {
     let (filename, rest) = read_string(bytes)?;
     let (mode, _) = read_string(rest)?;
 
-    match code {
-        OpCode::RRQ => {
-            Ok(Packet::RRQ {
-                filename: filename,
-                mode: mode,
-            })
-        }
-        OpCode::WRQ => {
-            Ok(Packet::WRQ {
-                filename: filename,
-                mode: mode,
-            })
-        }
-        _ => Err(PacketErr::InvalidOpCode),
-    }
+    Ok(Packet::RRQ {
+        filename: filename,
+        mode: mode,
+    })
+}
+
+fn read_wrq_packet(bytes: &[u8]) -> Result<Packet> {
+    let (filename, rest) = read_string(bytes)?;
+    let (mode, _) = read_string(rest)?;
+
+    Ok(Packet::WRQ {
+        filename: filename,
+        mode: mode,
+    })
 }
 
 fn read_data_packet(mut bytes: &[u8]) -> Result<Packet> {
