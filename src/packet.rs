@@ -105,9 +105,7 @@ impl From<ErrorCode> for Packet {
     }
 }
 
-pub const MODES: [&'static str; 3] = ["netascii", "octet", "mail"];
 pub const MAX_PACKET_SIZE: usize = 1024;
-pub const MAX_DATA_SIZE: usize = 516;
 
 /// The byte representation of a packet
 pub struct PacketData(Vec<u8>);
