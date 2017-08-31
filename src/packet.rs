@@ -95,11 +95,11 @@ impl ErrorCode {
 impl From<ErrorCode> for Packet {
     /// Returns the ERROR packet with the error code and
     /// the default description as the error message.
-    fn from(err: ErrorCode) -> Packet {
-        let msg = err.to_string();
+    fn from(code: ErrorCode) -> Packet {
+        let msg = code.to_string();
         Packet::ERROR {
-            code: err,
-            msg: msg,
+            code,
+            msg,
         }
     }
 }
@@ -199,8 +199,8 @@ fn read_rrq_packet(bytes: &[u8]) -> Result<Packet> {
     let (mode, _) = read_string(rest)?;
 
     Ok(Packet::RRQ {
-        filename: filename,
-        mode: mode,
+        filename,
+        mode,
     })
 }
 
@@ -209,8 +209,8 @@ fn read_wrq_packet(bytes: &[u8]) -> Result<Packet> {
     let (mode, _) = read_string(rest)?;
 
     Ok(Packet::WRQ {
-        filename: filename,
-        mode: mode,
+        filename,
+        mode,
     })
 }
 
@@ -221,8 +221,8 @@ fn read_data_packet(mut bytes: &[u8]) -> Result<Packet> {
     bytes.read_512(&mut data)?;
 
     Ok(Packet::DATA {
-        block_num: block_num,
-        data: data,
+        block_num,
+        data,
     })
 }
 
@@ -232,12 +232,12 @@ fn read_ack_packet(mut bytes: &[u8]) -> Result<Packet> {
 }
 
 fn read_error_packet(mut bytes: &[u8]) -> Result<Packet> {
-    let error_code = ErrorCode::from_u16(bytes.read_u16::<BigEndian>()?)?;
+    let code = ErrorCode::from_u16(bytes.read_u16::<BigEndian>()?)?;
     let (msg, _) = read_string(bytes)?;
 
     Ok(Packet::ERROR {
-        code: error_code,
-        msg: msg,
+        code,
+        msg,
     })
 }
 
