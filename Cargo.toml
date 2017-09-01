@@ -14,7 +14,7 @@ byteorder = "1.0"
 log = "0.3.6"
 env_logger = "0.4"
 clap = "2.25"
-mio-more = { git = "https://github.com/carllerche/mio-more.git" }
+mio-more = "0.1"
 
 [dev-dependencies]
 env_logger = "0.4"
