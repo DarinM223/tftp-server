@@ -34,12 +34,7 @@ fn rrq_no_file_gets_error() {
         filename: file,
         mode: "octet".into(),
     });
-    assert_matches!(
-        res,
-        Ok(Packet::ERROR { 
-            code: ErrorCode::FileNotFound , ..
-        })
-    );
+    assert_matches!(res, Ok(Packet::ERROR { code: ErrorCode::FileNotFound , ..  }));
     assert!(xfer.is_none());
 }
 
@@ -50,13 +45,7 @@ fn rrq_mail_gets_error() {
         filename: file,
         mode: "mail".into(),
     });
-    assert_eq!(
-        res,
-        Ok(Packet::ERROR {
-            code: ErrorCode::NoUser,
-            msg: "".into(),
-        })
-    );
+    assert_matches!(res, Ok(Packet::ERROR { code: ErrorCode::NoUser , ..  }));
     assert!(xfer.is_none());
 }
 
@@ -67,13 +56,7 @@ fn rrq_netascii_gets_error() {
         filename: file,
         mode: "netascii".into(),
     });
-    assert_eq!(
-        res,
-        Ok(Packet::ERROR {
-            code: ErrorCode::NotDefined,
-            msg: "".into(),
-        })
-    );
+    assert_matches!(res, Ok(Packet::ERROR { code: ErrorCode::NotDefined , ..  }));
     assert!(xfer.is_none());
 }
 
@@ -84,13 +67,7 @@ fn wrq_netascii_gets_error() {
         filename: file,
         mode: "netascii".into(),
     });
-    assert_eq!(
-        res,
-        Ok(Packet::ERROR {
-            code: ErrorCode::NotDefined,
-            msg: "".into(),
-        })
-    );
+    assert_matches!(res, Ok(Packet::ERROR { code: ErrorCode::NotDefined , ..  }));
     assert!(xfer.is_none());
 }
 
@@ -381,13 +358,7 @@ fn wrq_already_exists_error() {
         filename: file,
         mode: "octet".into(),
     });
-    assert_eq!(
-        res,
-        Ok(Packet::ERROR {
-            code: ErrorCode::FileExists,
-            msg: "".into(),
-        })
-    );
+    assert_matches!(res, Ok(Packet::ERROR { code: ErrorCode::FileExists , ..  }));
     assert!(xfer.is_none());
 }
 
@@ -419,13 +390,7 @@ fn wrq_mail_gets_error() {
         filename: file,
         mode: "mail".into(),
     });
-    assert_eq!(
-        res,
-        Ok(Packet::ERROR {
-            code: ErrorCode::NoUser,
-            msg: "".into(),
-        })
-    );
+    assert_matches!(res, Ok(Packet::ERROR { code: ErrorCode::NoUser , ..  }));
     assert!(xfer.is_none());
 }
 

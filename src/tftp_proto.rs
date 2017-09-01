@@ -76,14 +76,14 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
     ) -> (Option<Transfer<IO>>, Result<Packet, TftpError>) {
         match mode {
             "octet" => {}
-            "mail" => return TftpServerProto::err_answer(ErrorCode::NoUser),
-            _ => return TftpServerProto::err_answer(ErrorCode::NotDefined),
+            "mail" => return (None, Ok(ErrorCode::NoUser.into())),
+            _ => return (None, Ok(ErrorCode::NotDefined.into())),
         }
 
         if let Ok(xfer) = Transfer::new_write(&mut self.io_proxy, filename) {
             (Some(Transfer::Rx(xfer)), Ok(Packet::ACK(0)))
         } else {
-            TftpServerProto::err_answer(ErrorCode::FileExists)
+            (None, Ok(ErrorCode::FileExists.into()))
         }
     }
 
@@ -94,8 +94,8 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
     ) -> (Option<Transfer<IO>>, Result<Packet, TftpError>) {
         match mode {
             "octet" => {}
-            "mail" => return TftpServerProto::err_answer(ErrorCode::NoUser),
-            _ => return TftpServerProto::err_answer(ErrorCode::NotDefined),
+            "mail" => return (None, Ok(ErrorCode::NoUser.into())),
+            _ => return (None, Ok(ErrorCode::NotDefined.into())),
         }
 
         if let Ok(mut xfer) = Transfer::new_read(&mut self.io_proxy, filename) {
@@ -110,18 +110,8 @@ impl<IO: IOAdapter> TftpServerProto<IO> {
                 }),
             )
         } else {
-            TftpServerProto::err_answer(ErrorCode::FileNotFound)
+            (None, Ok(ErrorCode::FileNotFound.into()))
         }
-    }
-
-    fn err_answer(code: ErrorCode) -> (Option<Transfer<IO>>, Result<Packet, TftpError>) {
-        (
-            None,
-            Ok(Packet::ERROR {
-                code,
-                msg: "".to_owned(),
-            }),
-        )
     }
 }
 
