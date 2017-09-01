@@ -96,10 +96,7 @@ impl From<ErrorCode> for Packet {
     /// the default description as the error message.
     fn from(code: ErrorCode) -> Packet {
         let msg = code.to_string();
-        Packet::ERROR {
-            code,
-            msg,
-        }
+        Packet::ERROR { code, msg }
     }
 }
 
@@ -186,20 +183,14 @@ fn read_rrq_packet(bytes: &[u8]) -> Result<Packet> {
     let (filename, rest) = read_string(bytes)?;
     let (mode, _) = read_string(rest)?;
 
-    Ok(Packet::RRQ {
-        filename,
-        mode,
-    })
+    Ok(Packet::RRQ { filename, mode })
 }
 
 fn read_wrq_packet(bytes: &[u8]) -> Result<Packet> {
     let (filename, rest) = read_string(bytes)?;
     let (mode, _) = read_string(rest)?;
 
-    Ok(Packet::WRQ {
-        filename,
-        mode,
-    })
+    Ok(Packet::WRQ { filename, mode })
 }
 
 fn read_data_packet(mut bytes: &[u8]) -> Result<Packet> {
@@ -208,10 +199,7 @@ fn read_data_packet(mut bytes: &[u8]) -> Result<Packet> {
     // TODO: test with longer packets
     bytes.read_512(&mut data)?;
 
-    Ok(Packet::DATA {
-        block_num,
-        data,
-    })
+    Ok(Packet::DATA { block_num, data })
 }
 
 fn read_ack_packet(mut bytes: &[u8]) -> Result<Packet> {
@@ -223,10 +211,7 @@ fn read_error_packet(mut bytes: &[u8]) -> Result<Packet> {
     let code = ErrorCode::from_u16(bytes.read_u16::<BigEndian>()?)?;
     let (msg, _) = read_string(bytes)?;
 
-    Ok(Packet::ERROR {
-        code,
-        msg,
-    })
+    Ok(Packet::ERROR { code, msg })
 }
 
 fn rw_packet_bytes(packet: OpCode, filename: &str, mode: &str) -> Result<PacketData> {
