@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Write};
 use std::iter::Take;
@@ -36,11 +34,10 @@ fn rrq_no_file_gets_error() {
         filename: file,
         mode: "octet".into(),
     });
-    assert_eq!(
+    assert_matches!(
         res,
-        Ok(Packet::ERROR {
-            code: ErrorCode::FileNotFound,
-            msg: "".into(),
+        Ok(Packet::ERROR { 
+            code: ErrorCode::FileNotFound , ..
         })
     );
     assert!(xfer.is_none());
