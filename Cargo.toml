@@ -6,7 +6,7 @@ description = "A TFTP server implementation in Rust using mio"
 repository = "https://github.com/DarinM223/tftp-server"
 readme = "README.md"
 keywords = ["network", "tftp", "protocol", "mio"]
-license = "MIT"
+license = "MIT/GPLv3"
 
 [dependencies]
 mio = "0.6"
