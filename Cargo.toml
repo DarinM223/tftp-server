@@ -1,9 +1,9 @@
 [package]
 name = "tftp_server"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Darin Minamoto <darinm223@gmail.com>", "Alexandru Macovei <alexnmaco@gmail.com>"]
 description = "A TFTP server implementation in Rust using mio"
-repository = "https://github.com/DarinM223/tftp-server"
+repository = "https://github.com/alexmaco/tftp-server"
 readme = "README.md"
 keywords = ["network", "tftp", "protocol", "mio"]
 license = "MIT/GPLv3"
