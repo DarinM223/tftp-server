@@ -10,10 +10,10 @@ license = "MIT/GPLv3"
 
 [dependencies]
 mio = "0.6"
-byteorder = "1.0"
-log = "0.3.6"
+byteorder = "1"
+log = "0.3"
 env_logger = "0.4"
-clap = "2.25"
+clap = "2"
 mio-more = "0.1"
 
 [dev-dependencies]
