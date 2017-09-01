@@ -7,7 +7,6 @@ use read_512::Read512;
 pub enum PacketErr {
     StrOutOfBounds,
     OpCodeOutOfBounds,
-    ErrCodeOutOfBounds,
     Utf8Error(str::Utf8Error),
     IOError(io::Error),
 }
@@ -41,7 +40,7 @@ macro_rules! primitive_enum {
 
         // TODO: change this to a From<u16> impl
         impl $enum_name {
-            pub fn from_u16(i: $base_int) -> Result<$enum_name> {
+            fn from_u16(i: $base_int) -> Result<$enum_name> {
                 match i {
                     $( $value => Ok($enum_name::$variant), )+
                     _ => Err(PacketErr::OpCodeOutOfBounds)
