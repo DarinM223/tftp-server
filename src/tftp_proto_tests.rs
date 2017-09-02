@@ -335,13 +335,10 @@ fn rrq_small_file_err_kills_transfer() {
     );
     let mut xfer = xfer.unwrap();
     assert_eq!(
-        xfer.rx(Packet::ERROR {
-            code: ErrorCode::DiskFull,
-            msg: "".into(),
-        }),
+        xfer.rx(Packet::from(ErrorCode::DiskFull)),
         TftpResult::Done(None)
     );
-    assert_eq!(xfer.rx(Packet::ACK(0)), TftpResult::Done(None));
+    assert!(xfer.is_done());
 }
 
 #[test]
