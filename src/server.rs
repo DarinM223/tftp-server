@@ -361,10 +361,8 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         if conn.remote != src {
             // packet from somehere else, reply with error
             conn.socket.send_to(
-                Packet::ERROR {
-                    code: ErrorCode::UnknownID,
-                    msg: "".to_owned(),
-                }.into_bytes()?
+                Packet::from(ErrorCode::UnknownID)
+                    .into_bytes()?
                     .to_slice(),
                 &conn.remote,
             )?;
