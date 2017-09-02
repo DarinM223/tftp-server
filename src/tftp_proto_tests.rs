@@ -167,15 +167,12 @@ fn rrq_small_file_reply_with_data_illegal() {
         })
     );
     let mut xfer = xfer.unwrap();
-    assert_eq!(
+    assert_matches!(
         xfer.rx(Packet::DATA {
             data: vec![],
             block_num: 1,
         }),
-        TftpResult::Done(Some(Packet::ERROR {
-            code: ErrorCode::IllegalTFTP,
-            msg: "".into(),
-        }))
+        TftpResult::Done(Some(Packet::ERROR { code: ErrorCode::IllegalTFTP, ..  }))
     );
     assert_eq!(xfer.rx(Packet::ACK(0)), TftpResult::Done(None));
 }
@@ -462,12 +459,9 @@ fn wrq_small_file_reply_with_ack_illegal() {
         }),
         TftpResult::Reply(Packet::ACK(1))
     );
-    assert_eq!(
+    assert_matches!(
         xfer.rx(Packet::ACK(3)),
-        TftpResult::Done(Some(Packet::ERROR {
-            code: ErrorCode::IllegalTFTP,
-            msg: "".to_owned(),
-        }))
+        TftpResult::Done(Some(Packet::ERROR { code: ErrorCode::IllegalTFTP, ..  }))
     );
     assert_eq!(
         xfer.rx(Packet::DATA {

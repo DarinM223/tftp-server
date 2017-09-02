@@ -192,10 +192,7 @@ impl<IO: IOAdapter> Transfer<IO> {
             Rx(ref mut rx) => {
                 // wrong kind of packet, kill transfer
                 rx.complete = true;
-                TftpResult::Done(Some(Packet::ERROR {
-                    code: ErrorCode::IllegalTFTP,
-                    msg: "".to_owned(),
-                }))
+                TftpResult::Done(Some(ErrorCode::IllegalTFTP.into()))
             }
         }
     }
@@ -206,10 +203,7 @@ impl<IO: IOAdapter> Transfer<IO> {
             Tx(ref mut tx) => {
                 // wrong kind of packet, kill transfer
                 tx.complete = true;
-                TftpResult::Done(Some(Packet::ERROR {
-                    code: ErrorCode::IllegalTFTP,
-                    msg: "".to_owned(),
-                }))
+                TftpResult::Done(Some(ErrorCode::IllegalTFTP.into()))
             }
         }
     }
