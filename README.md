@@ -68,9 +68,11 @@ you have to turn on logging. To run tests with logging enabled run:
 $ RUST_LOG=tftp_server=info cargo test
 ```
 
-Feature TODOs
+TODOs
 -----
 
+* [ ] Documentation for individual items
+* [ ] Crate-level documentation with an overview and examples
 * [x] serve from specified directory, not just the current one
 * [x] treat directory as readonly (reject write requests)
 * [x] IPv6 support
