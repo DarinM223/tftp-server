@@ -295,21 +295,21 @@ mod tests {
     }
 
     test_read_string!(
-        test_read_string_normal,
+        read_string_normal,
         "hello world!\0",
         0,
         "hello world!",
         13
     );
     test_read_string!(
-        test_read_string_zero_in_mid,
+        read_string_zero_in_mid,
         "hello wor\0ld!",
         0,
         "hello wor",
         10
     );
     test_read_string!(
-        test_read_string_diff_start_pos,
+        read_string_diff_start_pos,
         "hello world!\0",
         6,
         "world!",
