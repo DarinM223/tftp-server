@@ -18,10 +18,6 @@ pub enum TftpError {
     PacketError(PacketErr),
     IoError(io::Error),
     TimerError(TimerError),
-    /// Error defined within the TFTP spec with an usigned integer
-    /// error code. The server should reply with an error packet
-    /// to the given socket address when handling this error.
-    TftpError(ErrorCode, SocketAddr),
 }
 
 impl From<io::Error> for TftpError {
