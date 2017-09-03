@@ -117,7 +117,7 @@ impl WritingTransfer {
         xfer
     }
 
-    fn step(&mut self, rx_buf: &mut [u8; MAX_PACKET_SIZE]) -> Option<()> {
+    fn step(&mut self, rx_buf: &mut [u8]) -> Option<()> {
         let (amt, src) = self.socket.recv_from(rx_buf).expect("cannot receive");
         if self.remote.is_some() {
             assert_eq!(self.remote.unwrap(), src, "transfer source changed");
@@ -196,7 +196,7 @@ impl ReadingTransfer {
         xfer
     }
 
-    fn step(&mut self, rx_buf: &mut [u8; MAX_PACKET_SIZE]) -> Option<()> {
+    fn step(&mut self, rx_buf: &mut [u8]) -> Option<()> {
         let (amt, src) = self.socket.recv_from(rx_buf).expect("cannot receive");
         if self.remote.is_some() {
             assert_eq!(self.remote.unwrap(), src, "transfer source changed");
