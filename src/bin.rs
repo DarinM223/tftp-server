@@ -72,17 +72,12 @@ fn main() {
                 panic!("error parsing argument \"{}\" as ip address", s);
             }
         }).collect()
-    });
-
-    let addrs = match addrs {
-        Some(list) => list,
-        None => {
-            vec![
-                (IpAddr::from([127, 0, 0, 1]), None),
-                (IpAddr::from([0; 16]), None),
-            ]
-        }
-    };
+    }).unwrap_or_else(||
+        vec![
+            (IpAddr::from([127, 0, 0, 1]), None),
+            (IpAddr::from([0; 16]), None),
+        ]
+    );
 
     let timeout = Duration::from_secs(
         matches
