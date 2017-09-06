@@ -61,23 +61,26 @@ fn main() {
         )
         .get_matches();
 
-    let addrs = matches.values_of(arg_ip).map(|ips| {
-        ips.map(|s| {
-            // try parsing in order: first ip:port, then just ip
-            if let Ok(sk) = SocketAddr::from_str(s) {
-                (sk.ip(), Some(sk.port()))
-            } else if let Ok(ip) = IpAddr::from_str(s) {
-                (ip, None)
-            } else {
-                panic!("error parsing argument \"{}\" as ip address", s);
-            }
-        }).collect()
-    }).unwrap_or_else(||
-        vec![
-            (IpAddr::from([127, 0, 0, 1]), None),
-            (IpAddr::from([0; 16]), None),
-        ]
-    );
+    let addrs = matches
+        .values_of(arg_ip)
+        .map(|ips| {
+            ips.map(|s| {
+                // try parsing in order: first ip:port, then just ip
+                if let Ok(sk) = SocketAddr::from_str(s) {
+                    (sk.ip(), Some(sk.port()))
+                } else if let Ok(ip) = IpAddr::from_str(s) {
+                    (ip, None)
+                } else {
+                    panic!("error parsing argument \"{}\" as ip address", s);
+                }
+            }).collect()
+        })
+        .unwrap_or_else(|| {
+            vec![
+                (IpAddr::from([127, 0, 0, 1]), None),
+                (IpAddr::from([0; 16]), None),
+            ]
+        });
 
     let timeout = Duration::from_secs(
         matches
