@@ -1,6 +1,9 @@
 extern crate env_logger;
 extern crate tftp_server;
 
+#[macro_use]
+extern crate assert_matches;
+
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, IpAddr, UdpSocket};
@@ -256,11 +259,7 @@ fn wrq_file_exists_test(server_addr: &SocketAddr) -> Result<()> {
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
     let packet = Packet::read(&buf[0..amt])?;
-    if let Packet::ERROR { code, .. } = packet {
-        assert_eq!(code, ErrorCode::FileExists);
-    } else {
-        panic!(format!("Packet has to be error packet, got: {:?}", packet));
-    }
+    assert_matches!(packet, Packet::ERROR { code: ErrorCode::FileExists , .. });
     Ok(())
 }
 
@@ -278,11 +277,7 @@ fn rrq_file_not_found_test(server_addr: &SocketAddr) -> Result<()> {
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
     let packet = Packet::read(&buf[0..amt])?;
-    if let Packet::ERROR { code, .. } = packet {
-        assert_eq!(code, ErrorCode::FileNotFound);
-    } else {
-        panic!(format!("Packet has to be error packet, got: {:?}", packet));
-    }
+    assert_matches!(packet, Packet::ERROR { code: ErrorCode::FileNotFound , .. });
     Ok(())
 }
 
