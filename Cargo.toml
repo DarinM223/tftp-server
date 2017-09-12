@@ -1,22 +1,24 @@
 [package]
 name = "tftp_server"
-version = "0.0.2"
-authors = ["Darin Minamoto <darinm223@gmail.com>"]
+version = "0.4.0"
+authors = ["Darin Minamoto <darinm223@gmail.com>", "Alexandru Macovei <alexnmaco@gmail.com>"]
 description = "A TFTP server implementation in Rust using mio"
-repository = "https://github.com/DarinM223/tftp-server"
+repository = "https://github.com/alexmaco/tftp-server"
 readme = "README.md"
 keywords = ["network", "tftp", "protocol", "mio"]
-license = "MIT"
+license = "MIT/GPLv3"
 
 [dependencies]
 mio = "0.6"
-rand = "0.3"
-byteorder = "0.5"
-log = "0.3.6"
-env_logger = "0.3.5"
+byteorder = "1"
+log = "0.3"
+env_logger = "0.4"
+clap = "2"
+mio-more = "0.1"
 
 [dev-dependencies]
-env_logger = "0.3.5"
+env_logger = "0.4"
+assert_matches = "1"
 
 [lib]
 name = "tftp_server"
@@ -25,10 +27,6 @@ path = "src/lib.rs"
 [[bin]]
 name = "tftp_server_bin"
 path = "src/bin.rs"
-
-[[test]]
-name = "tftp-packet-tests"
-path = "tests/test_packet.rs"
 
 [[test]]
 name = "tftp-server-tests"

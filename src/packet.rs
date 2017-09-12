@@ -1,15 +1,14 @@
-use std::{fmt, mem, result, str};
-use std::io::Cursor;
+use std::{result, str, io};
+use std::io::Write;
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
+use read_512::Read512;
 
 #[derive(Debug)]
 pub enum PacketErr {
-    OverflowSize,
-    InvalidOpCode,
     StrOutOfBounds,
     OpCodeOutOfBounds,
-    ErrCodeOutOfBounds,
     Utf8Error(str::Utf8Error),
+    IOError(io::Error),
 }
 
 impl From<str::Utf8Error> for PacketErr {
@@ -18,376 +17,249 @@ impl From<str::Utf8Error> for PacketErr {
     }
 }
 
+impl From<io::Error> for PacketErr {
+    fn from(err: io::Error) -> PacketErr {
+        PacketErr::IOError(err)
+    }
+}
+
 pub type Result<T> = result::Result<T, PacketErr>;
 
-#[repr(u16)]
-#[derive(PartialEq, Clone, Debug)]
-pub enum OpCode {
-    RRQ = 1,
-    WRQ = 2,
-    DATA = 3,
-    ACK = 4,
-    ERROR = 5,
-}
+macro_rules! primitive_enum {
+    (
+        $( #[$enum_attr:meta] )*
+        pub enum $enum_name:ident of $base_int:tt {
+            $( $variant:ident = $value:expr, )+
+        }
+    ) => {
+        $( #[$enum_attr] )*
+        #[repr($base_int)]
+        pub enum $enum_name {
+            $( $variant = $value, )+
+        }
 
-impl OpCode {
-    pub fn from_u16(i: u16) -> Result<OpCode> {
-        if i >= OpCode::RRQ as u16 && i <= OpCode::ERROR as u16 {
-            Ok(unsafe { mem::transmute(i) })
-        } else {
-            Err(PacketErr::OpCodeOutOfBounds)
+        // TODO: change this to a From<u16> impl
+        impl $enum_name {
+            fn from_u16(i: $base_int) -> Result<$enum_name> {
+                match i {
+                    $( $value => Ok($enum_name::$variant), )+
+                    _ => Err(PacketErr::OpCodeOutOfBounds)
+                }
+            }
         }
     }
 }
 
-#[repr(u16)]
-#[derive(PartialEq, Clone, Copy, Debug)]
-pub enum ErrorCode {
-    NotDefined = 0,
-    FileNotFound = 1,
-    AccessViolation = 2,
-    DiskFull = 3,
-    IllegalTFTP = 4,
-    UnknownID = 5,
-    FileExists = 6,
-    NoUser = 7,
-}
+primitive_enum! (
+    #[derive(PartialEq, Copy, Clone, Debug)]
+    pub enum OpCode of u16 {
+        RRQ = 1,
+        WRQ = 2,
+        DATA = 3,
+        ACK = 4,
+        ERROR = 5,
+    }
+);
+
+primitive_enum! (
+    #[derive(PartialEq, Clone, Copy, Debug)]
+    pub enum ErrorCode of u16 {
+        NotDefined = 0,
+        FileNotFound = 1,
+        AccessViolation = 2,
+        DiskFull = 3,
+        IllegalTFTP = 4,
+        UnknownID = 5,
+        FileExists = 6,
+        NoUser = 7,
+    }
+);
 
 impl ErrorCode {
-    pub fn from_u16(i: u16) -> Result<ErrorCode> {
-        if i >= ErrorCode::NotDefined as u16 && i <= ErrorCode::NoUser as u16 {
-            Ok(unsafe { mem::transmute(i) })
-        } else {
-            Err(PacketErr::ErrCodeOutOfBounds)
-        }
-    }
-
     /// Returns the string description of the error code.
     pub fn to_string(&self) -> String {
         (match *self {
-                ErrorCode::NotDefined => "Not defined, see error message (if any).",
-                ErrorCode::FileNotFound => "File not found.",
-                ErrorCode::AccessViolation => "Access violation.",
-                ErrorCode::DiskFull => "Disk full or allocation exceeded.",
-                ErrorCode::IllegalTFTP => "Illegal TFTP operation.",
-                ErrorCode::UnknownID => "Unknown transfer ID.",
-                ErrorCode::FileExists => "File already exists.",
-                ErrorCode::NoUser => "No such user.",
-            })
-            .to_string()
+             ErrorCode::NotDefined => "Not defined, see error message (if any).",
+             ErrorCode::FileNotFound => "File not found.",
+             ErrorCode::AccessViolation => "Access violation.",
+             ErrorCode::DiskFull => "Disk full or allocation exceeded.",
+             ErrorCode::IllegalTFTP => "Illegal TFTP operation.",
+             ErrorCode::UnknownID => "Unknown transfer ID.",
+             ErrorCode::FileExists => "File already exists.",
+             ErrorCode::NoUser => "No such user.",
+         }).to_string()
     }
+}
 
+impl From<ErrorCode> for Packet {
     /// Returns the ERROR packet with the error code and
     /// the default description as the error message.
-    pub fn to_packet(&self) -> Packet {
-        let msg = self.to_string();
-        Packet::ERROR {
-            code: *self,
-            msg: msg,
-        }
+    fn from(code: ErrorCode) -> Packet {
+        let msg = code.to_string();
+        Packet::ERROR { code, msg }
     }
 }
 
-pub const MODES: [&'static str; 3] = ["netascii", "octet", "mail"];
 pub const MAX_PACKET_SIZE: usize = 1024;
-pub const MAX_DATA_SIZE: usize = 516;
 
-/// The byte representation of a packet. Because many packets can
-/// be smaller than the maximum packet size, it contains a length
-/// parameter so that the actual packet size can be determined.
-pub struct PacketData {
-    bytes: [u8; MAX_PACKET_SIZE],
-    len: usize,
-}
+/// The byte representation of a packet
+pub struct PacketData(Vec<u8>);
 
 impl PacketData {
-    pub fn new(bytes: [u8; MAX_PACKET_SIZE], len: usize) -> PacketData {
-        PacketData {
-            bytes: bytes,
-            len: len,
-        }
-    }
-
     /// Returns a byte slice that can be sent through a socket.
-    pub fn to_slice<'a>(&'a self) -> &'a [u8] {
-        &self.bytes[0..self.len]
-    }
-}
-
-impl Clone for PacketData {
-    fn clone(&self) -> PacketData {
-        let mut bytes = [0; MAX_PACKET_SIZE];
-        for i in 0..MAX_PACKET_SIZE {
-            bytes[i] = self.bytes[i];
-        }
-
-        PacketData {
-            bytes: bytes,
-            len: self.len,
-        }
-    }
-}
-
-/// A wrapper around the data that is to be sent in a TFTP DATA packet
-/// so that the data can be cloned and compared for equality.
-pub struct DataBytes(pub [u8; 512]);
-
-impl PartialEq for DataBytes {
-    fn eq(&self, other: &DataBytes) -> bool {
-        for i in 0..512 {
-            if self.0[i] != other.0[i] {
-                return false;
-            }
-        }
-
-        true
-    }
-}
-
-impl Clone for DataBytes {
-    fn clone(&self) -> DataBytes {
-        let mut bytes = [0; 512];
-        for i in 0..512 {
-            bytes[i] = self.0[i];
-        }
-
-        DataBytes(bytes)
-    }
-}
-
-impl fmt::Debug for DataBytes {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", String::from_utf8_lossy(&self.0[..]))
+    pub fn to_slice(&self) -> &[u8] {
+        self.0.as_slice()
     }
 }
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum Packet {
-    RRQ {
-        filename: String,
-        mode: String,
-    },
-    WRQ {
-        filename: String,
-        mode: String,
-    },
-    DATA {
-        block_num: u16,
-        data: DataBytes,
-        len: usize,
-    },
+    RRQ { filename: String, mode: String },
+    WRQ { filename: String, mode: String },
+    DATA { block_num: u16, data: Vec<u8> },
     ACK(u16),
-    ERROR {
-        code: ErrorCode,
-        msg: String,
-    },
+    ERROR { code: ErrorCode, msg: String },
 }
 
 impl Packet {
     /// Creates and returns a packet parsed from its byte representation.
-    pub fn read(bytes: PacketData) -> Result<Packet> {
-        let opcode = OpCode::from_u16(merge_bytes(bytes.bytes[0], bytes.bytes[1]))?;
+    pub fn read(mut bytes: &[u8]) -> Result<Packet> {
+        let opcode = OpCode::from_u16(bytes.read_u16::<BigEndian>()?)?;
         match opcode {
-            OpCode::RRQ | OpCode::WRQ => read_rw_packet(opcode, bytes),
+            OpCode::RRQ => read_rrq_packet(bytes),
+            OpCode::WRQ => read_wrq_packet(bytes),
             OpCode::DATA => read_data_packet(bytes),
             OpCode::ACK => read_ack_packet(bytes),
             OpCode::ERROR => read_error_packet(bytes),
         }
     }
 
-    /// Returns the packet's operation code.
-    pub fn op_code(&self) -> OpCode {
-        match *self {
-            Packet::RRQ { .. } => OpCode::RRQ,
-            Packet::WRQ { .. } => OpCode::WRQ,
-            Packet::DATA { .. } => OpCode::DATA,
-            Packet::ACK(_) => OpCode::ACK,
-            Packet::ERROR { .. } => OpCode::ERROR,
-        }
-    }
-
     /// Consumes the packet and returns the packet in byte representation.
-    pub fn bytes(self) -> Result<PacketData> {
-        match self {
-            Packet::RRQ { filename, mode } => rw_packet_bytes(OpCode::RRQ, filename, mode),
-            Packet::WRQ { filename, mode } => rw_packet_bytes(OpCode::WRQ, filename, mode),
-            Packet::DATA { block_num, data, len } => data_packet_bytes(block_num, data.0, len),
+    pub fn into_bytes(self) -> Result<PacketData> {
+        self.to_bytes()
+    }
+
+    /// Returns the byte representation of the packet
+    pub fn to_bytes(&self) -> Result<PacketData> {
+        match *self {
+            Packet::RRQ {
+                ref filename,
+                ref mode,
+            } => rw_packet_bytes(OpCode::RRQ, filename, mode),
+            Packet::WRQ {
+                ref filename,
+                ref mode,
+            } => rw_packet_bytes(OpCode::WRQ, filename, mode),
+            Packet::DATA {
+                block_num,
+                ref data,
+            } => data_packet_bytes(block_num, data.as_slice()),
             Packet::ACK(block_num) => ack_packet_bytes(block_num),
-            Packet::ERROR { code, msg } => error_packet_bytes(code, msg),
+            Packet::ERROR { code, ref msg } => error_packet_bytes(code, msg),
         }
     }
 }
 
-/// Splits a two byte unsigned integer into two one byte unsigned integers.
-fn split_into_bytes(num: u16) -> (u8, u8) {
-    let mut wtr = vec![];
-    wtr.write_u16::<BigEndian>(num).unwrap();
-
-    (wtr[0], wtr[1])
-}
-
-/// Merges two 1 byte unsigned integers into a two byte unsigned integer.
-fn merge_bytes(num1: u8, num2: u8) -> u16 {
-    let mut rdr = Cursor::new(vec![num1, num2]);
-    rdr.read_u16::<BigEndian>().unwrap()
-}
-
-/// Reads bytes from the packet bytes starting from the given index
-/// until the zero byte and returns a string containing the bytes read.
-fn read_string(bytes: &PacketData, start: usize) -> Result<(String, usize)> {
-    let mut result_bytes = Vec::new();
-    let mut counter = start;
-    while bytes.bytes[counter] != 0 {
-        result_bytes.push(bytes.bytes[counter]);
-
-        counter += 1;
-        if counter >= bytes.len {
-            return Err(PacketErr::StrOutOfBounds);
-        }
+/// Reads until the zero byte and returns a string containing the bytes read
+/// and the rest of the buffer, skipping the zero byte
+fn read_string(bytes: &[u8]) -> Result<(String, &[u8])> {
+    let result_bytes = bytes
+        .iter()
+        .take_while(|c| **c != 0)
+        .cloned()
+        .collect::<Vec<u8>>();
+    // TODO: add test for error condition below
+    if result_bytes.len() == bytes.len() {
+        // reading didn't stop on a zero byte
+        return Err(PacketErr::StrOutOfBounds);
     }
-    counter += 1;
 
     let result_str = str::from_utf8(result_bytes.as_slice())?.to_string();
-    Ok((result_str, counter))
+    let (_, tail) = bytes.split_at(result_bytes.len() + 1 /* +1 so we skip the \0 byte*/);
+    Ok((result_str, tail))
 }
 
-fn read_rw_packet(code: OpCode, bytes: PacketData) -> Result<Packet> {
-    let (filename, end_pos) = read_string(&bytes, 2)?;
-    let (mode, _) = read_string(&bytes, end_pos)?;
+fn read_rrq_packet(bytes: &[u8]) -> Result<Packet> {
+    let (filename, rest) = read_string(bytes)?;
+    let (mode, _) = read_string(rest)?;
 
-    match code {
-        OpCode::RRQ => {
-            Ok(Packet::RRQ {
-                filename: filename,
-                mode: mode,
-            })
-        }
-        OpCode::WRQ => {
-            Ok(Packet::WRQ {
-                filename: filename,
-                mode: mode,
-            })
-        }
-        _ => Err(PacketErr::InvalidOpCode),
-    }
+    Ok(Packet::RRQ { filename, mode })
 }
 
-fn read_data_packet(bytes: PacketData) -> Result<Packet> {
-    let block_num = merge_bytes(bytes.bytes[2], bytes.bytes[3]);
-    let mut data = [0; 512];
-    for i in 0..512 {
-        data[i] = bytes.bytes[i + 4];
-    }
+fn read_wrq_packet(bytes: &[u8]) -> Result<Packet> {
+    let (filename, rest) = read_string(bytes)?;
+    let (mode, _) = read_string(rest)?;
 
-    Ok(Packet::DATA {
-        block_num: block_num,
-        data: DataBytes(data),
-        len: bytes.len - 4,
-    })
+    Ok(Packet::WRQ { filename, mode })
 }
 
-fn read_ack_packet(bytes: PacketData) -> Result<Packet> {
-    let block_num = merge_bytes(bytes.bytes[2], bytes.bytes[3]);
+fn read_data_packet(mut bytes: &[u8]) -> Result<Packet> {
+    let block_num = bytes.read_u16::<BigEndian>()?;
+    let mut data = Vec::with_capacity(512);
+    // TODO: test with longer packets
+    bytes.read_512(&mut data)?;
+
+    Ok(Packet::DATA { block_num, data })
+}
+
+fn read_ack_packet(mut bytes: &[u8]) -> Result<Packet> {
+    let block_num = bytes.read_u16::<BigEndian>()?;
     Ok(Packet::ACK(block_num))
 }
 
-fn read_error_packet(bytes: PacketData) -> Result<Packet> {
-    let error_code = ErrorCode::from_u16(merge_bytes(bytes.bytes[2], bytes.bytes[3]))?;
-    let (msg, _) = read_string(&bytes, 4)?;
+fn read_error_packet(mut bytes: &[u8]) -> Result<Packet> {
+    let code = ErrorCode::from_u16(bytes.read_u16::<BigEndian>()?)?;
+    let (msg, _) = read_string(bytes)?;
 
-    Ok(Packet::ERROR {
-        code: error_code,
-        msg: msg,
-    })
+    Ok(Packet::ERROR { code, msg })
 }
 
-fn rw_packet_bytes(packet: OpCode, filename: String, mode: String) -> Result<PacketData> {
-    if filename.len() + mode.len() > MAX_PACKET_SIZE {
-        return Err(PacketErr::OverflowSize);
-    }
+fn rw_packet_bytes(packet: OpCode, filename: &str, mode: &str) -> Result<PacketData> {
+    let mut buf = Vec::with_capacity(MAX_PACKET_SIZE);
 
-    let mut bytes = [0; MAX_PACKET_SIZE];
+    buf.write_u16::<BigEndian>(packet as u16)?;
+    buf.write_all(filename.as_bytes())?;
+    buf.push(0);
+    buf.write_all(mode.as_bytes())?;
+    buf.push(0);
 
-    let (b1, b2) = split_into_bytes(packet as u16);
-    bytes[0] = b1;
-    bytes[1] = b2;
-
-    let mut index = 2;
-    for byte in filename.bytes() {
-        bytes[index] = byte;
-        index += 1;
-    }
-
-    index += 1;
-    for byte in mode.bytes() {
-        bytes[index] = byte;
-        index += 1;
-    }
-    index += 1;
-
-    Ok(PacketData::new(bytes, index))
+    Ok(PacketData(buf))
 }
 
-fn data_packet_bytes(block_num: u16, data: [u8; 512], data_len: usize) -> Result<PacketData> {
-    let mut bytes = [0; MAX_PACKET_SIZE];
+fn data_packet_bytes(block_num: u16, data: &[u8]) -> Result<PacketData> {
+    let mut buf = Vec::with_capacity(MAX_PACKET_SIZE);
 
-    let (b1, b2) = split_into_bytes(OpCode::DATA as u16);
-    bytes[0] = b1;
-    bytes[1] = b2;
+    buf.write_u16::<BigEndian>(OpCode::DATA as u16)?;
+    buf.write_u16::<BigEndian>(block_num)?;
+    buf.write_all(data)?;
 
-    let (b3, b4) = split_into_bytes(block_num);
-    bytes[2] = b3;
-    bytes[3] = b4;
-
-    let mut index = 4;
-    for i in 0..data_len {
-        bytes[index] = data[i];
-        index += 1;
-    }
-
-    Ok(PacketData::new(bytes, index))
+    Ok(PacketData(buf))
 }
 
 fn ack_packet_bytes(block_num: u16) -> Result<PacketData> {
-    let mut bytes = [0; MAX_PACKET_SIZE];
+    let mut buf = Vec::with_capacity(MAX_PACKET_SIZE);
 
-    let (b1, b2) = split_into_bytes(OpCode::ACK as u16);
-    bytes[0] = b1;
-    bytes[1] = b2;
+    buf.write_u16::<BigEndian>(OpCode::ACK as u16)?;
+    buf.write_u16::<BigEndian>(block_num)?;
 
-    let (b3, b4) = split_into_bytes(block_num);
-    bytes[2] = b3;
-    bytes[3] = b4;
-
-    Ok(PacketData::new(bytes, 4))
+    Ok(PacketData(buf))
 }
 
-fn error_packet_bytes(code: ErrorCode, msg: String) -> Result<PacketData> {
-    if msg.len() + 5 > MAX_PACKET_SIZE {
-        return Err(PacketErr::OverflowSize);
-    }
+fn error_packet_bytes(code: ErrorCode, msg: &str) -> Result<PacketData> {
+    let mut buf = Vec::with_capacity(MAX_PACKET_SIZE);
 
-    let mut bytes = [0; MAX_PACKET_SIZE];
+    buf.write_u16::<BigEndian>(OpCode::ERROR as u16)?;
+    buf.write_u16::<BigEndian>(code as u16)?;
+    buf.write_all(msg.as_bytes())?;
+    buf.push(0);
 
-    let (b1, b2) = split_into_bytes(OpCode::ERROR as u16);
-    bytes[0] = b1;
-    bytes[1] = b2;
-
-    let (b3, b4) = split_into_bytes(code as u16);
-    bytes[2] = b3;
-    bytes[3] = b4;
-
-    let mut index = 4;
-    for byte in msg.bytes() {
-        bytes[index] = byte;
-        index += 1;
-    }
-    index += 1;
-
-    Ok(PacketData::new(bytes, index))
+    Ok(PacketData(buf))
 }
 
-macro_rules! read_string {
+#[cfg(test)]
+mod tests {
+    use super::*;
+    macro_rules! test_read_string {
     ($name:ident, $bytes:expr, $start_pos:expr, $string:expr, $end_pos:expr) => {
         #[test]
         fn $name() {
@@ -397,28 +269,80 @@ macro_rules! read_string {
                 bytes[i] = seed_bytes[i] as u8;
             }
 
-            let result = read_string(&PacketData::new(bytes, seed_bytes.len()), $start_pos);
+            let result = read_string(&bytes[$start_pos..seed_bytes.len()]);
             assert!(result.is_ok());
-            let _ = result.map(|(string, end_pos)| {
+            let _ = result.map(|(string, rest)| {
                 assert_eq!(string, $string);
-                assert_eq!(end_pos, $end_pos);
+                assert_eq!(seed_bytes.len() - rest.len(), $end_pos);
             });
         }
     };
-}
+    }
 
-read_string!(test_read_string_normal,
-             "hello world!\0",
-             0,
-             "hello world!",
-             13);
-read_string!(test_read_string_zero_in_mid,
-             "hello wor\0ld!",
-             0,
-             "hello wor",
-             10);
-read_string!(test_read_string_diff_start_pos,
-             "hello world!\0",
-             6,
-             "world!",
-             13);
+    test_read_string!(
+        read_string_normal,
+        "hello world!\0",
+        0,
+        "hello world!",
+        13
+    );
+    test_read_string!(
+        read_string_zero_in_mid,
+        "hello wor\0ld!",
+        0,
+        "hello wor",
+        10
+    );
+    test_read_string!(
+        read_string_diff_start_pos,
+        "hello world!\0",
+        6,
+        "world!",
+        13
+    );
+
+    macro_rules! packet_enc_dec_test {
+        ($name:ident, $packet:expr) => {
+            #[test]
+            fn $name() {
+                let bytes = $packet.clone().into_bytes();
+                assert!(bytes.is_ok());
+                let packet = bytes.and_then(|pd| Packet::read(pd.to_slice()));
+                assert!(packet.is_ok());
+                let _ = packet.map(|packet| { assert_eq!(packet, $packet); });
+            }
+        };
+    }
+
+    const BYTE_DATA: [u8; 512] = [123; 512];
+
+    packet_enc_dec_test!(
+        rrq,
+        Packet::RRQ {
+            filename: "/a/b/c/hello.txt".to_string(),
+            mode: "netascii".to_string(),
+        }
+    );
+    packet_enc_dec_test!(
+        wrq,
+        Packet::WRQ {
+            filename: "./world.txt".to_string(),
+            mode: "octet".to_string(),
+        }
+    );
+    packet_enc_dec_test!(ack, Packet::ACK(1234));
+    packet_enc_dec_test!(
+        data,
+        Packet::DATA {
+            block_num: 1234,
+            data: Vec::from(&BYTE_DATA[..]),
+        }
+    );
+    packet_enc_dec_test!(
+        err,
+        Packet::ERROR {
+            code: ErrorCode::NoUser,
+            msg: "This is a message".to_string(),
+        }
+    );
+}
