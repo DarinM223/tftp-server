@@ -18,10 +18,6 @@ pub enum TftpError {
     PacketError(PacketErr),
     IoError(io::Error),
     TimerError(TimerError),
-    /// Error defined within the TFTP spec with an usigned integer
-    /// error code. The server should reply with an error packet
-    /// to the given socket address when handling this error.
-    TftpError(ErrorCode, SocketAddr),
 }
 
 impl From<io::Error> for TftpError {
@@ -365,10 +361,8 @@ impl<IO: IOAdapter + Default> TftpServerImpl<IO> {
         if conn.remote != src {
             // packet from somehere else, reply with error
             conn.socket.send_to(
-                Packet::ERROR {
-                    code: ErrorCode::UnknownID,
-                    msg: "".to_owned(),
-                }.into_bytes()?
+                Packet::from(ErrorCode::UnknownID)
+                    .into_bytes()?
                     .to_slice(),
                 &conn.remote,
             )?;

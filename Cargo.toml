@@ -18,6 +18,7 @@ mio-more = "0.1"
 
 [dev-dependencies]
 env_logger = "0.4"
+assert_matches = "1"
 
 [lib]
 name = "tftp_server"
