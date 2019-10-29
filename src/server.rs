@@ -6,12 +6,14 @@ use mio_extras::timer::{Timeout, Timer};
 use rand;
 use rand::Rng;
 use std::collections::HashMap;
+use std::env;
 use std::fs;
 use std::fs::File;
 use std::io;
 use std::io::{Read, Write};
 use std::net;
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::result;
 use std::str::FromStr;
 use std::time::Duration;
@@ -84,6 +86,54 @@ struct ConnectionState {
     addr: SocketAddr,
 }
 
+pub struct TftpServerBuilder {
+    addr: Option<SocketAddr>,
+    serve_dir: Option<PathBuf>,
+}
+
+impl TftpServerBuilder {
+    pub fn new() -> TftpServerBuilder {
+        TftpServerBuilder {
+            addr: None,
+            serve_dir: None,
+        }
+    }
+
+    pub fn addr(mut self, addr: SocketAddr) -> TftpServerBuilder {
+        self.addr = Some(addr);
+        self
+    }
+
+    pub fn serve_dir(mut self, serve_dir: PathBuf) -> TftpServerBuilder {
+        self.serve_dir = Some(serve_dir);
+        self
+    }
+
+    pub fn build(self) -> Result<TftpServer> {
+        let poll = Poll::new()?;
+        let socket = match self.addr {
+            Some(addr) => UdpSocket::bind(&addr)?,
+            None => UdpSocket::from_socket(create_socket(Some(Duration::from_secs(TIMEOUT)))?)?,
+        };
+        let timer = Timer::default();
+        poll.register(&socket, SERVER, Ready::all(), PollOpt::edge())?;
+        poll.register(&timer, TIMER, Ready::readable(), PollOpt::edge())?;
+        let path = match self.serve_dir {
+            Some(path) => Some(path.canonicalize()?),
+            None => None,
+        };
+
+        Ok(TftpServer {
+            new_token: 2,
+            poll,
+            timer,
+            socket,
+            connections: HashMap::new(),
+            serve_dir: path,
+        })
+    }
+}
+
 pub struct TftpServer {
     /// The ID of a new token used for generating different tokens.
     new_token: usize,
@@ -96,43 +146,11 @@ pub struct TftpServer {
     socket: UdpSocket,
     /// The separate UDP connections for handling multiple requests.
     connections: HashMap<Token, ConnectionState>,
+    /// The directory to serve the files in.
+    serve_dir: Option<PathBuf>,
 }
 
 impl TftpServer {
-    /// Creates a new TFTP server from a random open UDP port.
-    pub fn new() -> Result<TftpServer> {
-        let poll = Poll::new()?;
-        let socket = UdpSocket::from_socket(create_socket(Some(Duration::from_secs(TIMEOUT)))?)?;
-        let timer = Timer::default();
-        poll.register(&socket, SERVER, Ready::all(), PollOpt::edge())?;
-        poll.register(&timer, TIMER, Ready::readable(), PollOpt::edge())?;
-
-        Ok(TftpServer {
-            new_token: 2,
-            poll,
-            timer,
-            socket,
-            connections: HashMap::new(),
-        })
-    }
-
-    /// Creates a new TFTP server from a socket address.
-    pub fn new_from_addr(addr: &SocketAddr) -> Result<TftpServer> {
-        let poll = Poll::new()?;
-        let socket = UdpSocket::bind(addr)?;
-        let timer = Timer::default();
-        poll.register(&socket, SERVER, Ready::all(), PollOpt::edge())?;
-        poll.register(&timer, TIMER, Ready::readable(), PollOpt::edge())?;
-
-        Ok(TftpServer {
-            new_token: 2,
-            poll,
-            timer,
-            socket,
-            connections: HashMap::new(),
-        })
-    }
-
     /// Returns a new token created from incrementing a counter.
     fn generate_token(&mut self) -> Token {
         let token = Token(self.new_token);
@@ -174,8 +192,12 @@ impl TftpServer {
 
         // Handle the RRQ or WRQ packet.
         let (file, block_num, send_packet) = match packet {
-            Packet::RRQ { filename, mode } => handle_rrq_packet(filename, mode, &src)?,
-            Packet::WRQ { filename, mode } => handle_wrq_packet(filename, mode, &src)?,
+            Packet::RRQ { filename, mode } => {
+                handle_rrq_packet(filename, mode, &src, &self.serve_dir)?
+            }
+            Packet::WRQ { filename, mode } => {
+                handle_wrq_packet(filename, mode, &src, &self.serve_dir)?
+            }
             _ => return Err(TftpError::TftpError(ErrorCode::IllegalTFTP, src)),
         };
 
@@ -368,18 +390,18 @@ fn handle_rrq_packet(
     filename: String,
     mode: String,
     addr: &SocketAddr,
+    serve_dir: &Option<PathBuf>,
 ) -> Result<(File, u16, Packet)> {
     info!(
         "Received RRQ packet with filename {} and mode {}",
         filename, mode
     );
 
-    if filename.contains("..") || filename.starts_with('/') {
-        return Err(TftpError::TftpError(ErrorCode::FileNotFound, *addr));
-    }
+    let path = path_from_filename(filename, serve_dir)?;
+    check_in_serve_dir(serve_dir, &path, addr)?;
 
     let mut file =
-        File::open(filename).map_err(|_| TftpError::TftpError(ErrorCode::FileNotFound, *addr))?;
+        File::open(&path).map_err(|_| TftpError::TftpError(ErrorCode::FileNotFound, *addr))?;
     let block_num = 1;
 
     let mut buf = [0; 512];
@@ -399,15 +421,19 @@ fn handle_wrq_packet(
     filename: String,
     mode: String,
     addr: &SocketAddr,
+    serve_dir: &Option<PathBuf>,
 ) -> Result<(File, u16, Packet)> {
     info!(
         "Received WRQ packet with filename {} and mode {}",
         filename, mode
     );
-    if fs::metadata(&filename).is_ok() {
+
+    let path = path_from_filename(filename, serve_dir)?;
+    check_in_serve_dir(serve_dir, &path, addr)?;
+    if fs::metadata(&path).is_ok() {
         return Err(TftpError::TftpError(ErrorCode::FileExists, *addr));
     }
-    let file = File::create(filename)?;
+    let file = File::create(&path)?;
     let block_num = 0;
 
     // Reply with ACK with a block number of 0.
@@ -467,4 +493,25 @@ fn handle_data_packet(
     } else {
         Ok(())
     }
+}
+
+fn path_from_filename(filename: String, serve_dir: &Option<PathBuf>) -> Result<PathBuf> {
+    let mut path = match serve_dir {
+        Some(buf) => buf.clone(),
+        None => env::current_dir()?,
+    };
+    path.push(&filename);
+    Ok(path)
+}
+
+fn check_in_serve_dir(serve_dir: &Option<PathBuf>, path: &Path, addr: &SocketAddr) -> Result<()> {
+    let curr_dir = env::current_dir()?;
+    let serve_path = match serve_dir.as_ref() {
+        Some(path) => path,
+        None => &curr_dir,
+    };
+    if !path.starts_with(serve_path) {
+        return Err(TftpError::TftpError(ErrorCode::FileNotFound, *addr));
+    }
+    Ok(())
 }

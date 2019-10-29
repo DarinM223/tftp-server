@@ -5,18 +5,23 @@ extern crate tftp_server;
 
 use std::fs;
 use std::fs::File;
+use std::io;
 use std::io::{Read, Write};
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 use tftp_server::packet::{DataBytes, ErrorCode, Packet, PacketData, MAX_PACKET_SIZE};
-use tftp_server::server::{create_socket, incr_block_num, Result, TftpServer};
+use tftp_server::server::{create_socket, incr_block_num, Result, TftpError, TftpServerBuilder};
 
 const TIMEOUT: u64 = 3;
 
 /// Starts the server in a new thread.
-pub fn start_server() -> Result<SocketAddr> {
-    let mut server = TftpServer::new()?;
+pub fn start_server(server_dir: Option<PathBuf>) -> Result<SocketAddr> {
+    let mut server = match server_dir {
+        Some(dir) => TftpServerBuilder::new().serve_dir(dir).build()?,
+        None => TftpServerBuilder::new().build()?,
+    };
     let addr = server.local_addr()?;
     thread::spawn(move || {
         if let Err(e) = server.run() {
@@ -188,7 +193,11 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
                     break;
                 }
             } else {
-                panic!("Reply packet is not a data packet");
+                fs::remove_file("./hello.txt")?;
+                return Err(TftpError::IoError(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Reply packet is not a data packet",
+                )));
             }
         }
 
@@ -237,14 +246,74 @@ fn rrq_file_not_found_test(server_addr: &SocketAddr) -> Result<()> {
     if let Packet::ERROR { code, .. } = packet {
         assert_eq!(code, ErrorCode::FileNotFound);
     } else {
-        panic!(format!("Packet has to be error packet, got: {:?}", packet));
+        return Err(TftpError::IoError(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Packet has to be error packet, got: {:?}", packet),
+        )));
+    }
+    Ok(())
+}
+
+fn illegal_subdir_test(server_addr: &SocketAddr) -> Result<()> {
+    let socket = create_socket(None)?;
+    let init_packet = Packet::RRQ {
+        filename: "../hello.txt".to_string(),
+        mode: "octet".to_string(),
+    };
+    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
+
+    let mut buf = [0; MAX_PACKET_SIZE];
+    let amt = socket.recv(&mut buf)?;
+    let packet = Packet::read(PacketData::new(buf, amt))?;
+    if let Packet::ERROR { code, .. } = packet {
+        assert_eq!(code, ErrorCode::FileNotFound);
+    } else {
+        panic!(format!("Unauthorized access to directory"));
+    }
+    Ok(())
+}
+
+fn illegal_root_test(server_addr: &SocketAddr) -> Result<()> {
+    let socket = create_socket(None)?;
+    let init_packet = Packet::RRQ {
+        filename: "/etc/profile".to_string(),
+        mode: "octet".to_string(),
+    };
+    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
+
+    let mut buf = [0; MAX_PACKET_SIZE];
+    let amt = socket.recv(&mut buf)?;
+    let packet = Packet::read(PacketData::new(buf, amt))?;
+    if let Packet::ERROR { code, .. } = packet {
+        assert_eq!(code, ErrorCode::FileNotFound);
+    } else {
+        panic!(format!("Unauthorized access to directory"));
+    }
+    Ok(())
+}
+
+fn illegal_home_test(server_addr: &SocketAddr) -> Result<()> {
+    let socket = create_socket(None)?;
+    let init_packet = Packet::RRQ {
+        filename: "~/.bashrc".to_string(),
+        mode: "octet".to_string(),
+    };
+    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
+
+    let mut buf = [0; MAX_PACKET_SIZE];
+    let amt = socket.recv(&mut buf)?;
+    let packet = Packet::read(PacketData::new(buf, amt))?;
+    if let Packet::ERROR { code, .. } = packet {
+        assert_eq!(code, ErrorCode::FileNotFound);
+    } else {
+        panic!(format!("Unauthorized access to directory"));
     }
     Ok(())
 }
 
 fn main() {
     env_logger::init().unwrap();
-    let server_addr = start_server().unwrap();
+    let server_addr = start_server(None).unwrap();
     thread::sleep(Duration::from_millis(1000));
     wrq_initial_ack_test(&server_addr).unwrap();
     rrq_initial_data_test(&server_addr).unwrap();
@@ -254,4 +323,13 @@ fn main() {
     timeout_test(&server_addr).unwrap();
     wrq_file_exists_test(&server_addr).unwrap();
     rrq_file_not_found_test(&server_addr).unwrap();
+    illegal_subdir_test(&server_addr).unwrap();
+    illegal_root_test(&server_addr).unwrap();
+    illegal_home_test(&server_addr).unwrap();
+    let new_server_addr = start_server(Some(PathBuf::from("./files"))).unwrap();
+    rrq_file_not_found_test(&new_server_addr)
+        .expect_err("Expected accessing ./hello to fail because it is a valid location");
+    rrq_whole_file_test(&new_server_addr).expect_err(
+        "Expected accessing ./files/hello to fail because it is no longer a valid location",
+    );
 }
