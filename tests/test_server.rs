@@ -266,7 +266,7 @@ fn illegal_subdir_test(server_addr: &SocketAddr) -> Result<()> {
     let amt = socket.recv(&mut buf)?;
     let packet = Packet::read(PacketData::new(buf, amt))?;
     if let Packet::ERROR { code, .. } = packet {
-        assert_eq!(code, ErrorCode::FileNotFound);
+        assert_eq!(code, ErrorCode::AccessViolation);
     } else {
         panic!(format!("Unauthorized access to directory"));
     }
@@ -285,7 +285,7 @@ fn illegal_root_test(server_addr: &SocketAddr) -> Result<()> {
     let amt = socket.recv(&mut buf)?;
     let packet = Packet::read(PacketData::new(buf, amt))?;
     if let Packet::ERROR { code, .. } = packet {
-        assert_eq!(code, ErrorCode::FileNotFound);
+        assert_eq!(code, ErrorCode::AccessViolation);
     } else {
         panic!(format!("Unauthorized access to directory"));
     }
@@ -304,7 +304,7 @@ fn illegal_home_test(server_addr: &SocketAddr) -> Result<()> {
     let amt = socket.recv(&mut buf)?;
     let packet = Packet::read(PacketData::new(buf, amt))?;
     if let Packet::ERROR { code, .. } = packet {
-        assert_eq!(code, ErrorCode::FileNotFound);
+        assert_eq!(code, ErrorCode::AccessViolation);
     } else {
         panic!(format!("Unauthorized access to directory"));
     }

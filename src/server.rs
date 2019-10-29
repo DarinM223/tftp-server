@@ -397,8 +397,7 @@ fn handle_rrq_packet(
         filename, mode
     );
 
-    let path = path_from_filename(filename, serve_dir)?;
-    check_in_serve_dir(serve_dir, &path, addr)?;
+    let path = path_from_filename(filename, serve_dir, addr)?;
 
     let mut file =
         File::open(&path).map_err(|_| TftpError::TftpError(ErrorCode::FileNotFound, *addr))?;
@@ -428,8 +427,7 @@ fn handle_wrq_packet(
         filename, mode
     );
 
-    let path = path_from_filename(filename, serve_dir)?;
-    check_in_serve_dir(serve_dir, &path, addr)?;
+    let path = path_from_filename(filename, serve_dir, addr)?;
     if fs::metadata(&path).is_ok() {
         return Err(TftpError::TftpError(ErrorCode::FileExists, *addr));
     }
@@ -495,23 +493,18 @@ fn handle_data_packet(
     }
 }
 
-fn path_from_filename(filename: String, serve_dir: &Option<PathBuf>) -> Result<PathBuf> {
+fn path_from_filename(
+    filename: String,
+    serve_dir: &Option<PathBuf>,
+    addr: &SocketAddr,
+) -> Result<PathBuf> {
+    if filename.contains("..") || filename.starts_with('/') || filename.starts_with("~/") {
+        return Err(TftpError::TftpError(ErrorCode::AccessViolation, *addr));
+    }
     let mut path = match serve_dir {
-        Some(buf) => buf.clone(),
+        Some(dir) => dir.clone(),
         None => env::current_dir()?,
     };
     path.push(&filename);
     Ok(path)
-}
-
-fn check_in_serve_dir(serve_dir: &Option<PathBuf>, path: &Path, addr: &SocketAddr) -> Result<()> {
-    let curr_dir = env::current_dir()?;
-    let serve_path = match serve_dir.as_ref() {
-        Some(path) => path,
-        None => &curr_dir,
-    };
-    if !path.starts_with(serve_path) {
-        return Err(TftpError::TftpError(ErrorCode::FileNotFound, *addr));
-    }
-    Ok(())
 }
