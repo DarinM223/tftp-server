@@ -1,6 +1,6 @@
-use std::{fmt, mem, result, str};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::Cursor;
-use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
+use std::{fmt, mem, result, str};
 
 #[derive(Debug)]
 pub enum PacketErr {
@@ -65,7 +65,10 @@ impl ErrorCode {
     /// Returns the ERROR packet with the error code and
     /// the default description as the error message.
     pub fn to_packet(self) -> Packet {
-        Packet::ERROR { code: self, msg: self.to_string() }
+        Packet::ERROR {
+            code: self,
+            msg: self.to_string(),
+        }
     }
 }
 
@@ -110,7 +113,10 @@ impl PacketData {
 
 impl Clone for PacketData {
     fn clone(&self) -> PacketData {
-        PacketData { bytes: self.bytes, len: self.len }
+        PacketData {
+            bytes: self.bytes,
+            len: self.len,
+        }
     }
 }
 
@@ -187,7 +193,11 @@ impl Packet {
         match self {
             Packet::RRQ { filename, mode } => rw_packet_bytes(OpCode::RRQ, filename, mode),
             Packet::WRQ { filename, mode } => rw_packet_bytes(OpCode::WRQ, filename, mode),
-            Packet::DATA { block_num, data, len } => data_packet_bytes(block_num, data.0, len),
+            Packet::DATA {
+                block_num,
+                data,
+                len,
+            } => data_packet_bytes(block_num, data.0, len),
             Packet::ACK(block_num) => ack_packet_bytes(block_num),
             Packet::ERROR { code, msg } => error_packet_bytes(code, msg),
         }
@@ -259,7 +269,10 @@ fn read_error_packet(bytes: PacketData) -> Result<Packet> {
     let error_code = ErrorCode::from_u16(merge_bytes(bytes.bytes[2], bytes.bytes[3]))?;
     let (msg, _) = read_string(&bytes, 4)?;
 
-    Ok(Packet::ERROR { code: error_code, msg })
+    Ok(Packet::ERROR {
+        code: error_code,
+        msg,
+    })
 }
 
 fn rw_packet_bytes(packet: OpCode, filename: String, mode: String) -> Result<PacketData> {
@@ -364,18 +377,24 @@ macro_rules! read_string {
     };
 }
 
-read_string!(test_read_string_normal,
-             "hello world!\0",
-             0,
-             "hello world!",
-             13);
-read_string!(test_read_string_zero_in_mid,
-             "hello wor\0ld!",
-             0,
-             "hello wor",
-             10);
-read_string!(test_read_string_diff_start_pos,
-             "hello world!\0",
-             6,
-             "world!",
-             13);
+read_string!(
+    test_read_string_normal,
+    "hello world!\0",
+    0,
+    "hello world!",
+    13
+);
+read_string!(
+    test_read_string_zero_in_mid,
+    "hello wor\0ld!",
+    0,
+    "hello wor",
+    10
+);
+read_string!(
+    test_read_string_diff_start_pos,
+    "hello world!\0",
+    6,
+    "world!",
+    13
+);

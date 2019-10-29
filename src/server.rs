@@ -1,8 +1,8 @@
-use crate::packet::{ErrorCode, MAX_PACKET_SIZE, DataBytes, Packet, PacketData, PacketErr};
+use crate::packet::{DataBytes, ErrorCode, Packet, PacketData, PacketErr, MAX_PACKET_SIZE};
 use log::{error, info};
-use mio::*;
 use mio::udp::UdpSocket;
-use mio_extras::timer::{Timer, Timeout};
+use mio::*;
+use mio_extras::timer::{Timeout, Timer};
 use rand;
 use rand::Rng;
 use std::collections::HashMap;
@@ -145,7 +145,9 @@ impl TftpServer {
     fn cancel_connection(&mut self, token: Token) -> Result<()> {
         if let Some(conn) = self.connections.remove(&token) {
             self.poll.deregister(&conn.conn)?;
-            self.timer.cancel_timeout(&conn.timeout).expect("Error canceling timeout");
+            self.timer
+                .cancel_timeout(&conn.timeout)
+                .expect("Error canceling timeout");
         }
         Ok(())
     }
@@ -181,19 +183,22 @@ impl TftpServer {
         let socket = UdpSocket::from_socket(create_socket(Some(Duration::from_secs(TIMEOUT)))?)?;
         let token = self.generate_token();
         let timeout = self.timer.set_timeout(Duration::from_secs(TIMEOUT), token);
-        self.poll.register(&socket, token, Ready::all(), PollOpt::edge())?;
+        self.poll
+            .register(&socket, token, Ready::all(), PollOpt::edge())?;
         info!("Created connection with token: {:?}", token);
 
         socket.send_to(send_packet.clone().bytes()?.to_slice(), &src)?;
-        self.connections.insert(token,
-                                ConnectionState {
-                                    conn: socket,
-                                    file,
-                                    timeout,
-                                    block_num,
-                                    last_packet: send_packet,
-                                    addr: src,
-                                });
+        self.connections.insert(
+            token,
+            ConnectionState {
+                conn: socket,
+                file,
+                timeout,
+                block_num,
+                last_packet: send_packet,
+                addr: src,
+            },
+        );
 
         Ok(())
     }
@@ -210,7 +215,8 @@ impl TftpServer {
         for token in tokens {
             if let Some(ref mut conn) = self.connections.get_mut(&token) {
                 info!("Timeout: resending last packet for token: {:?}", token);
-                conn.conn.send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
+                conn.conn
+                    .send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
             }
             self.reset_timeout(token)?;
         }
@@ -230,9 +236,11 @@ impl TftpServer {
 
             match packet {
                 Packet::ACK(block_num) => handle_ack_packet(block_num, conn)?,
-                Packet::DATA { block_num, data, len } => {
-                    handle_data_packet(block_num, data, len, conn)?
-                }
+                Packet::DATA {
+                    block_num,
+                    data,
+                    len,
+                } => handle_data_packet(block_num, data, len, conn)?,
                 Packet::ERROR { code, msg } => {
                     error!("Error message received with code {:?}: {:?}", code, msg);
                     return Err(TftpError::TftpError(code, conn.addr));
@@ -250,9 +258,11 @@ impl TftpServer {
     /// Handles sending error packets given the error code.
     fn handle_error(&mut self, token: Token, code: ErrorCode, addr: &SocketAddr) -> Result<()> {
         if token == SERVER {
-            self.socket.send_to(code.to_packet().bytes()?.to_slice(), addr)?;
+            self.socket
+                .send_to(code.to_packet().bytes()?.to_slice(), addr)?;
         } else if let Some(ref mut conn) = self.connections.get_mut(&token) {
-            conn.conn.send_to(code.to_packet().bytes()?.to_slice(), addr)?;
+            conn.conn
+                .send_to(code.to_packet().bytes()?.to_slice(), addr)?;
         }
         Ok(())
     }
@@ -262,16 +272,12 @@ impl TftpServer {
     /// or from a timeout timer for a connection.
     pub fn handle_token(&mut self, token: Token) -> Result<()> {
         match token {
-            SERVER => {
-                match self.handle_server_packet() {
-                    Err(TftpError::NoneFromSocket) => {}
-                    Err(TftpError::TftpError(code, addr)) => {
-                        self.handle_error(token, code, &addr)?
-                    }
-                    Err(e) => error!("Error: {:?}", e),
-                    _ => {}
-                }
-            }
+            SERVER => match self.handle_server_packet() {
+                Err(TftpError::NoneFromSocket) => {}
+                Err(TftpError::TftpError(code, addr)) => self.handle_error(token, code, &addr)?,
+                Err(e) => error!("Error: {:?}", e),
+                _ => {}
+            },
             TIMER => self.handle_timer()?,
             token if self.connections.get(&token).is_some() => {
                 match self.handle_connection_packet(token) {
@@ -358,20 +364,22 @@ pub fn incr_block_num(block_num: &mut u16) {
     }
 }
 
-fn handle_rrq_packet(filename: String,
-                     mode: String,
-                     addr: &SocketAddr)
-                     -> Result<(File, u16, Packet)> {
-    info!("Received RRQ packet with filename {} and mode {}",
-             filename,
-             mode);
+fn handle_rrq_packet(
+    filename: String,
+    mode: String,
+    addr: &SocketAddr,
+) -> Result<(File, u16, Packet)> {
+    info!(
+        "Received RRQ packet with filename {} and mode {}",
+        filename, mode
+    );
 
     if filename.contains("..") || filename.starts_with('/') {
         return Err(TftpError::TftpError(ErrorCode::FileNotFound, *addr));
     }
 
-    let mut file = File::open(filename)
-        .map_err(|_| TftpError::TftpError(ErrorCode::FileNotFound, *addr))?;
+    let mut file =
+        File::open(filename).map_err(|_| TftpError::TftpError(ErrorCode::FileNotFound, *addr))?;
     let block_num = 1;
 
     let mut buf = [0; 512];
@@ -387,13 +395,15 @@ fn handle_rrq_packet(filename: String,
     Ok((file, block_num, last_packet))
 }
 
-fn handle_wrq_packet(filename: String,
-                     mode: String,
-                     addr: &SocketAddr)
-                     -> Result<(File, u16, Packet)> {
-    info!("Received WRQ packet with filename {} and mode {}",
-             filename,
-             mode);
+fn handle_wrq_packet(
+    filename: String,
+    mode: String,
+    addr: &SocketAddr,
+) -> Result<(File, u16, Packet)> {
+    info!(
+        "Received WRQ packet with filename {} and mode {}",
+        filename, mode
+    );
     if fs::metadata(&filename).is_ok() {
         return Err(TftpError::TftpError(ErrorCode::FileExists, *addr));
     }
@@ -422,7 +432,8 @@ fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> Result<()> {
         data: DataBytes(buf),
         len: amount,
     };
-    conn.conn.send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
+    conn.conn
+        .send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
 
     if amount < 512 {
         Err(TftpError::CloseConnection)
@@ -431,11 +442,12 @@ fn handle_ack_packet(block_num: u16, conn: &mut ConnectionState) -> Result<()> {
     }
 }
 
-fn handle_data_packet(block_num: u16,
-                      data: DataBytes,
-                      len: usize,
-                      conn: &mut ConnectionState)
-                      -> Result<()> {
+fn handle_data_packet(
+    block_num: u16,
+    data: DataBytes,
+    len: usize,
+    conn: &mut ConnectionState,
+) -> Result<()> {
     info!("Received data with block number {}", block_num);
 
     incr_block_num(&mut conn.block_num);
@@ -447,7 +459,8 @@ fn handle_data_packet(block_num: u16,
 
     // Send ACK packet for data.
     conn.last_packet = Packet::ACK(conn.block_num);
-    conn.conn.send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
+    conn.conn
+        .send_to(conn.last_packet.clone().bytes()?.to_slice(), &conn.addr)?;
 
     if len < 512 {
         Err(TftpError::CloseConnection)

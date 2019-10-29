@@ -9,7 +9,7 @@ use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::thread;
 use std::time::Duration;
-use tftp_server::packet::{ErrorCode, DataBytes, Packet, PacketData, MAX_PACKET_SIZE};
+use tftp_server::packet::{DataBytes, ErrorCode, Packet, PacketData, MAX_PACKET_SIZE};
 use tftp_server::server::{create_socket, incr_block_num, Result, TftpServer};
 
 const TIMEOUT: u64 = 3;
@@ -51,7 +51,6 @@ fn timeout_test(server_addr: &SocketAddr) -> Result<()> {
     let amt = socket.recv(&mut buf)?;
     let reply_packet = Packet::read(PacketData::new(buf, amt))?;
     assert_eq!(reply_packet, Packet::ACK(0));
-
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
@@ -171,7 +170,12 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
             let (amt, src) = socket.recv_from(&mut reply_buf)?;
             recv_src = src;
             let reply_packet = Packet::read(PacketData::new(reply_buf, amt))?;
-            if let Packet::DATA { block_num, data, len } = reply_packet {
+            if let Packet::DATA {
+                block_num,
+                data,
+                len,
+            } = reply_packet
+            {
                 assert_eq!(client_block_num, block_num);
                 file.write(&data.0[0..len])?;
 
