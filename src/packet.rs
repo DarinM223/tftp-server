@@ -62,33 +62,30 @@ impl ErrorCode {
         }
     }
 
-    /// Returns the string description of the error code.
-    pub fn to_string(&self) -> String {
-        (match *self {
-                ErrorCode::NotDefined => "Not defined, see error message (if any).",
-                ErrorCode::FileNotFound => "File not found.",
-                ErrorCode::AccessViolation => "Access violation.",
-                ErrorCode::DiskFull => "Disk full or allocation exceeded.",
-                ErrorCode::IllegalTFTP => "Illegal TFTP operation.",
-                ErrorCode::UnknownID => "Unknown transfer ID.",
-                ErrorCode::FileExists => "File already exists.",
-                ErrorCode::NoUser => "No such user.",
-            })
-            .to_string()
-    }
-
     /// Returns the ERROR packet with the error code and
     /// the default description as the error message.
-    pub fn to_packet(&self) -> Packet {
-        let msg = self.to_string();
-        Packet::ERROR {
-            code: *self,
-            msg: msg,
-        }
+    pub fn to_packet(self) -> Packet {
+        Packet::ERROR { code: self, msg: self.to_string() }
     }
 }
 
-pub const MODES: [&'static str; 3] = ["netascii", "octet", "mail"];
+impl fmt::Display for ErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match *self {
+            ErrorCode::NotDefined => "Not defined, see error message (if any).",
+            ErrorCode::FileNotFound => "File not found.",
+            ErrorCode::AccessViolation => "Access violation.",
+            ErrorCode::DiskFull => "Disk full or allocation exceeded.",
+            ErrorCode::IllegalTFTP => "Illegal TFTP operation.",
+            ErrorCode::UnknownID => "Unknown transfer ID.",
+            ErrorCode::FileExists => "File already exists.",
+            ErrorCode::NoUser => "No such user.",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+pub const MODES: [&str; 3] = ["netascii", "octet", "mail"];
 pub const MAX_PACKET_SIZE: usize = 1024;
 pub const MAX_DATA_SIZE: usize = 516;
 
@@ -102,34 +99,24 @@ pub struct PacketData {
 
 impl PacketData {
     pub fn new(bytes: [u8; MAX_PACKET_SIZE], len: usize) -> PacketData {
-        PacketData {
-            bytes: bytes,
-            len: len,
-        }
+        PacketData { bytes, len }
     }
 
     /// Returns a byte slice that can be sent through a socket.
-    pub fn to_slice<'a>(&'a self) -> &'a [u8] {
+    pub fn to_slice(&self) -> &[u8] {
         &self.bytes[0..self.len]
     }
 }
 
 impl Clone for PacketData {
     fn clone(&self) -> PacketData {
-        let mut bytes = [0; MAX_PACKET_SIZE];
-        for i in 0..MAX_PACKET_SIZE {
-            bytes[i] = self.bytes[i];
-        }
-
-        PacketData {
-            bytes: bytes,
-            len: self.len,
-        }
+        PacketData { bytes: self.bytes, len: self.len }
     }
 }
 
 /// A wrapper around the data that is to be sent in a TFTP DATA packet
 /// so that the data can be cloned and compared for equality.
+#[derive(Clone)]
 pub struct DataBytes(pub [u8; 512]);
 
 impl PartialEq for DataBytes {
@@ -141,17 +128,6 @@ impl PartialEq for DataBytes {
         }
 
         true
-    }
-}
-
-impl Clone for DataBytes {
-    fn clone(&self) -> DataBytes {
-        let mut bytes = [0; 512];
-        for i in 0..512 {
-            bytes[i] = self.0[i];
-        }
-
-        DataBytes(bytes)
     }
 }
 
@@ -256,18 +232,8 @@ fn read_rw_packet(code: OpCode, bytes: PacketData) -> Result<Packet> {
     let (mode, _) = read_string(&bytes, end_pos)?;
 
     match code {
-        OpCode::RRQ => {
-            Ok(Packet::RRQ {
-                filename: filename,
-                mode: mode,
-            })
-        }
-        OpCode::WRQ => {
-            Ok(Packet::WRQ {
-                filename: filename,
-                mode: mode,
-            })
-        }
+        OpCode::RRQ => Ok(Packet::RRQ { filename, mode }),
+        OpCode::WRQ => Ok(Packet::WRQ { filename, mode }),
         _ => Err(PacketErr::InvalidOpCode),
     }
 }
@@ -275,12 +241,10 @@ fn read_rw_packet(code: OpCode, bytes: PacketData) -> Result<Packet> {
 fn read_data_packet(bytes: PacketData) -> Result<Packet> {
     let block_num = merge_bytes(bytes.bytes[2], bytes.bytes[3]);
     let mut data = [0; 512];
-    for i in 0..512 {
-        data[i] = bytes.bytes[i + 4];
-    }
+    data[0..512].clone_from_slice(&bytes.bytes[4..(512 + 4)]);
 
     Ok(Packet::DATA {
-        block_num: block_num,
+        block_num,
         data: DataBytes(data),
         len: bytes.len - 4,
     })
@@ -295,10 +259,7 @@ fn read_error_packet(bytes: PacketData) -> Result<Packet> {
     let error_code = ErrorCode::from_u16(merge_bytes(bytes.bytes[2], bytes.bytes[3]))?;
     let (msg, _) = read_string(&bytes, 4)?;
 
-    Ok(Packet::ERROR {
-        code: error_code,
-        msg: msg,
-    })
+    Ok(Packet::ERROR { code: error_code, msg })
 }
 
 fn rw_packet_bytes(packet: OpCode, filename: String, mode: String) -> Result<PacketData> {
@@ -339,13 +300,9 @@ fn data_packet_bytes(block_num: u16, data: [u8; 512], data_len: usize) -> Result
     bytes[2] = b3;
     bytes[3] = b4;
 
-    let mut index = 4;
-    for i in 0..data_len {
-        bytes[index] = data[i];
-        index += 1;
-    }
+    bytes[4..(data_len + 4)].clone_from_slice(&data[0..data_len]);
 
-    Ok(PacketData::new(bytes, index))
+    Ok(PacketData::new(bytes, data_len + 4))
 }
 
 fn ack_packet_bytes(block_num: u16) -> Result<PacketData> {
