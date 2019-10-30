@@ -213,38 +213,19 @@ fn rrq_whole_file_test(server_addr: &SocketAddr) -> Result<()> {
     Ok(())
 }
 
-fn wrq_file_exists_test(server_addr: &SocketAddr) -> Result<()> {
+fn packet_error_test(
+    packet: Packet,
+    server_addr: &SocketAddr,
+    error_code: ErrorCode,
+) -> Result<()> {
     let socket = create_socket(None)?;
-    let init_packet = Packet::WRQ {
-        filename: "./files/hello.txt".to_string(),
-        mode: "octet".to_string(),
-    };
-    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
+    socket.send_to(packet.bytes()?.to_slice(), server_addr)?;
 
     let mut buf = [0; MAX_PACKET_SIZE];
     let amt = socket.recv(&mut buf)?;
     let packet = Packet::read(PacketData::new(buf, amt))?;
     if let Packet::ERROR { code, .. } = packet {
-        assert_eq!(code, ErrorCode::FileExists);
-    } else {
-        panic!(format!("Packet has to be error packet, got: {:?}", packet));
-    }
-    Ok(())
-}
-
-fn rrq_file_not_found_test(server_addr: &SocketAddr) -> Result<()> {
-    let socket = create_socket(None)?;
-    let init_packet = Packet::RRQ {
-        filename: "./hello.txt".to_string(),
-        mode: "octet".to_string(),
-    };
-    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
-
-    let mut buf = [0; MAX_PACKET_SIZE];
-    let amt = socket.recv(&mut buf)?;
-    let packet = Packet::read(PacketData::new(buf, amt))?;
-    if let Packet::ERROR { code, .. } = packet {
-        assert_eq!(code, ErrorCode::FileNotFound);
+        assert_eq!(code, error_code);
     } else {
         return Err(TftpError::IoError(io::Error::new(
             io::ErrorKind::Other,
@@ -254,61 +235,44 @@ fn rrq_file_not_found_test(server_addr: &SocketAddr) -> Result<()> {
     Ok(())
 }
 
+fn wrq_file_exists_test(server_addr: &SocketAddr) -> Result<()> {
+    let init_packet = Packet::WRQ {
+        filename: "./files/hello.txt".to_string(),
+        mode: "octet".to_string(),
+    };
+    packet_error_test(init_packet, server_addr, ErrorCode::FileExists)
+}
+
+fn rrq_file_not_found_test(server_addr: &SocketAddr) -> Result<()> {
+    let init_packet = Packet::RRQ {
+        filename: "./hello.txt".to_string(),
+        mode: "octet".to_string(),
+    };
+    packet_error_test(init_packet, server_addr, ErrorCode::FileNotFound)
+}
+
 fn illegal_subdir_test(server_addr: &SocketAddr) -> Result<()> {
-    let socket = create_socket(None)?;
     let init_packet = Packet::RRQ {
         filename: "../hello.txt".to_string(),
         mode: "octet".to_string(),
     };
-    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
-
-    let mut buf = [0; MAX_PACKET_SIZE];
-    let amt = socket.recv(&mut buf)?;
-    let packet = Packet::read(PacketData::new(buf, amt))?;
-    if let Packet::ERROR { code, .. } = packet {
-        assert_eq!(code, ErrorCode::AccessViolation);
-    } else {
-        panic!(format!("Unauthorized access to directory"));
-    }
-    Ok(())
+    packet_error_test(init_packet, server_addr, ErrorCode::AccessViolation)
 }
 
 fn illegal_root_test(server_addr: &SocketAddr) -> Result<()> {
-    let socket = create_socket(None)?;
     let init_packet = Packet::RRQ {
         filename: "/etc/profile".to_string(),
         mode: "octet".to_string(),
     };
-    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
-
-    let mut buf = [0; MAX_PACKET_SIZE];
-    let amt = socket.recv(&mut buf)?;
-    let packet = Packet::read(PacketData::new(buf, amt))?;
-    if let Packet::ERROR { code, .. } = packet {
-        assert_eq!(code, ErrorCode::AccessViolation);
-    } else {
-        panic!(format!("Unauthorized access to directory"));
-    }
-    Ok(())
+    packet_error_test(init_packet, server_addr, ErrorCode::AccessViolation)
 }
 
 fn illegal_home_test(server_addr: &SocketAddr) -> Result<()> {
-    let socket = create_socket(None)?;
     let init_packet = Packet::RRQ {
         filename: "~/.bashrc".to_string(),
         mode: "octet".to_string(),
     };
-    socket.send_to(init_packet.bytes()?.to_slice(), server_addr)?;
-
-    let mut buf = [0; MAX_PACKET_SIZE];
-    let amt = socket.recv(&mut buf)?;
-    let packet = Packet::read(PacketData::new(buf, amt))?;
-    if let Packet::ERROR { code, .. } = packet {
-        assert_eq!(code, ErrorCode::AccessViolation);
-    } else {
-        panic!(format!("Unauthorized access to directory"));
-    }
-    Ok(())
+    packet_error_test(init_packet, server_addr, ErrorCode::AccessViolation)
 }
 
 fn main() {
