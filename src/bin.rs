@@ -6,7 +6,7 @@ extern crate tftp_server;
 use std::env;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use tftp_server::server::TftpServer;
+use tftp_server::server::{TftpServer, TftpServerBuilder};
 
 fn main() {
     env_logger::init().unwrap();
@@ -17,9 +17,14 @@ fn main() {
         let port = args[1].clone();
         let addr = format!("127.0.0.1:{}", port);
         let socket_addr = SocketAddr::from_str(addr.as_str()).expect("Error parsing address");
-        server = TftpServer::new_from_addr(&socket_addr).expect("Error creating server");
+        server = TftpServerBuilder::new()
+            .addr(socket_addr)
+            .build()
+            .expect("Error creating server");
     } else {
-        server = TftpServer::new().expect("Error creating server");
+        server = TftpServerBuilder::new()
+            .build()
+            .expect("Error creating server");
         println!(
             "Server created at address: {:?}",
             server.local_addr().unwrap()
