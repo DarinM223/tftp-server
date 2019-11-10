@@ -18,10 +18,7 @@ const TIMEOUT: u64 = 3;
 
 /// Starts the server in a new thread.
 pub fn start_server(server_dir: Option<PathBuf>) -> Result<SocketAddr> {
-    let mut server = match server_dir {
-        Some(dir) => TftpServerBuilder::new().serve_dir(dir).build()?,
-        None => TftpServerBuilder::new().build()?,
-    };
+    let mut server = TftpServerBuilder::new().serve_dir_opt(server_dir).build()?;
     let addr = server.local_addr()?;
     thread::spawn(move || {
         if let Err(e) = server.run() {

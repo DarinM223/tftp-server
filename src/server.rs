@@ -13,7 +13,7 @@ use std::io;
 use std::io::{Read, Write};
 use std::net;
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::result;
 use std::str::FromStr;
 use std::time::Duration;
@@ -99,14 +99,22 @@ impl TftpServerBuilder {
         }
     }
 
-    pub fn addr(mut self, addr: SocketAddr) -> TftpServerBuilder {
-        self.addr = Some(addr);
+    pub fn addr_opt(mut self, addr: Option<SocketAddr>) -> TftpServerBuilder {
+        self.addr = addr;
         self
     }
 
-    pub fn serve_dir(mut self, serve_dir: PathBuf) -> TftpServerBuilder {
-        self.serve_dir = Some(serve_dir);
+    pub fn addr(self, addr: SocketAddr) -> TftpServerBuilder {
+        self.addr_opt(Some(addr))
+    }
+
+    pub fn serve_dir_opt(mut self, serve_dir: Option<PathBuf>) -> TftpServerBuilder {
+        self.serve_dir = serve_dir;
         self
+    }
+
+    pub fn serve_dir(self, serve_dir: PathBuf) -> TftpServerBuilder {
+        self.serve_dir_opt(Some(serve_dir))
     }
 
     pub fn build(self) -> Result<TftpServer> {

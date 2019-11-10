@@ -1,6 +1,6 @@
 [package]
 name = "tftp_server"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["Darin Minamoto <darinm223@gmail.com>"]
 description = "A TFTP server implementation in Rust using mio"
 repository = "https://github.com/DarinM223/tftp-server"
@@ -19,14 +19,11 @@ env_logger = "0.3.5"
 
 [dev-dependencies]
 env_logger = "0.3.5"
+getopts = "0.2"
 
 [lib]
 name = "tftp_server"
 path = "src/lib.rs"
-
-[[bin]]
-name = "tftp_server_bin"
-path = "src/bin.rs"
 
 [[test]]
 name = "tftp-packet-tests"
