@@ -42,6 +42,10 @@ fn main() {
         .serve_dir_opt(dir)
         .build()
         .expect("Error creating server");
+    println!(
+        "Server created at address {:?}",
+        server.local_addr().unwrap()
+    );
 
     match server.run() {
         Ok(_) => println!("Server completed successfully!"),
