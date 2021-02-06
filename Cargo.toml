@@ -10,6 +10,8 @@ license = "MIT"
 edition = "2018"
 
 [dependencies]
+num-traits = "0.2"
+num-derive = "0.3"
 mio = "0.6"
 mio-extras = "2.0.5"
 rand = "0.3"

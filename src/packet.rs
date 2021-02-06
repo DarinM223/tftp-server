@@ -1,8 +1,9 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use num_derive::FromPrimitive;
 use std::io::Cursor;
-use std::{fmt, mem, result, str};
+use std::{fmt, result, str};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum PacketErr {
     OverflowSize,
     InvalidOpCode,
@@ -21,7 +22,7 @@ impl From<str::Utf8Error> for PacketErr {
 pub type Result<T> = result::Result<T, PacketErr>;
 
 #[repr(u16)]
-#[derive(PartialEq, Clone, Debug)]
+#[derive(PartialEq, Clone, Debug, FromPrimitive)]
 pub enum OpCode {
     RRQ = 1,
     WRQ = 2,
@@ -32,16 +33,12 @@ pub enum OpCode {
 
 impl OpCode {
     pub fn from_u16(i: u16) -> Result<OpCode> {
-        if i >= OpCode::RRQ as u16 && i <= OpCode::ERROR as u16 {
-            Ok(unsafe { mem::transmute(i) })
-        } else {
-            Err(PacketErr::OpCodeOutOfBounds)
-        }
+        num_traits::FromPrimitive::from_u16(i).ok_or(PacketErr::OpCodeOutOfBounds)
     }
 }
 
 #[repr(u16)]
-#[derive(PartialEq, Clone, Copy, Debug)]
+#[derive(PartialEq, Clone, Copy, Debug, FromPrimitive)]
 pub enum ErrorCode {
     NotDefined = 0,
     FileNotFound = 1,
@@ -55,11 +52,7 @@ pub enum ErrorCode {
 
 impl ErrorCode {
     pub fn from_u16(i: u16) -> Result<ErrorCode> {
-        if i >= ErrorCode::NotDefined as u16 && i <= ErrorCode::NoUser as u16 {
-            Ok(unsafe { mem::transmute(i) })
-        } else {
-            Err(PacketErr::ErrCodeOutOfBounds)
-        }
+        num_traits::FromPrimitive::from_u16(i).ok_or(PacketErr::ErrCodeOutOfBounds)
     }
 
     /// Returns the ERROR packet with the error code and
@@ -398,3 +391,23 @@ read_string!(
     "world!",
     13
 );
+
+#[cfg(test)]
+mod from_primitive_tests {
+    use super::*;
+
+    #[test]
+    fn test_encode_opcode() {
+        assert_eq!(OpCode::from_u16(0), Err(PacketErr::OpCodeOutOfBounds));
+        assert_eq!(OpCode::from_u16(1), Ok(OpCode::RRQ));
+        assert_eq!(OpCode::from_u16(5), Ok(OpCode::ERROR));
+        assert_eq!(OpCode::from_u16(6), Err(PacketErr::OpCodeOutOfBounds));
+    }
+
+    #[test]
+    fn test_encode_errorcode() {
+        assert_eq!(ErrorCode::from_u16(0), Ok(ErrorCode::NotDefined));
+        assert_eq!(ErrorCode::from_u16(7), Ok(ErrorCode::NoUser));
+        assert_eq!(ErrorCode::from_u16(8), Err(PacketErr::ErrCodeOutOfBounds));
+    }
+}
